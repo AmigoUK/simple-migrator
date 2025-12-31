@@ -170,12 +170,12 @@ class Backup_Manager {
 
                 $command = sprintf(
                     '%s --host=%s --user=%s --password=%s --single-transaction --quick --lock-tables=false %s > %s 2>&1',
-                    escshellcmd($mysql_cmd),
-                    escshellarg(DB_HOST),
-                    escshellarg(DB_USER),
-                    escshellarg(DB_PASSWORD),
-                    escshellarg(DB_NAME),
-                    escshellarg($db_file)
+                    \escapeshellcmd($mysql_cmd),
+                    \escapeshellarg(DB_HOST),
+                    \escapeshellarg(DB_USER),
+                    \escapeshellarg(DB_PASSWORD),
+                    \escapeshellarg(DB_NAME),
+                    \escapeshellarg($db_file)
                 );
 
                 exec($command, $output, $return_code);
@@ -690,6 +690,11 @@ class Backup_Manager {
                     'remaining' => round($remaining, 1)
                 ));
                 echo "\n";
+
+                // Only flush if there's a buffer (avoid PHP notices)
+                if (ob_get_level() > 0) {
+                    ob_flush();
+                }
                 flush();
             });
 
