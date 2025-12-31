@@ -424,7 +424,7 @@ class Backup_Manager {
      * @param string $backup_path Backup directory path
      * @return true|WP_Error
      */
-    private function restore_database($backup_path) {
+    public function restore_database($backup_path) {
         global $wpdb;
 
         $sql_file = $backup_path . 'database.sql';
@@ -572,7 +572,7 @@ class Backup_Manager {
      * @param string $backup_path Backup directory path
      * @return true|WP_Error
      */
-    private function restore_files($backup_path) {
+    public function restore_files($backup_path) {
         $content_dir = WP_CONTENT_DIR;
         $zip_file = $backup_path . 'files.zip';
 
@@ -926,144 +926,5 @@ class Backup_Manager {
         $metadata = json_decode($json, true);
 
         return $metadata ?: false;
-    }
-
-    /**
-     * Delete a backup
-     *
-     * @param string $backup_id Backup ID
-     * @return true|WP_Error
-     */
-    public function delete_backup($backup_id) {
-        $backup_path = $this->backup_dir . $backup_id . '/';
-
-        if (!file_exists($backup_path . 'backup.json')) {
-            return new \WP_Error('backup_not_found', __('Backup not found:', 'simple-migrator') . ' ' . $backup_id);
-        }
-
-        // Recursively delete backup directory
-        $this->recursive_delete($backup_path);
-
-        return true;
-    }
-
-    /**
-     * Restore files from backup (for WP-CLI partial restore)
-     *
-     * @param string $backup_path Backup directory path
-     * @return true|WP_Error
-     */
-    public function restore_files($backup_path) {
-        return $this->restore_files_helper($backup_path);
-    }
-
-    /**
-     * Restore database from backup (for WP-CLI partial restore)
-     *
-     * @param string $backup_path Backup directory path
-     * @return true|WP_Error
-     */
-    public function restore_database($backup_path) {
-        return $this->restore_database_helper($backup_path);
-    }
-
-    /**
-     * Recursively delete a directory
-     *
-     * @param string $dir Directory path
-     * @return void
-     */
-    private function recursive_delete($dir) {
-        if (is_dir($dir)) {
-            $objects = scandir($dir);
-            foreach ($objects as $object) {
-                if ($object !== '.' && $object !== '..') {
-                    if (is_dir($dir . '/' . $object)) {
-                        $this->recursive_delete($dir . '/' . $object);
-                    } else {
-                        unlink($dir . '/' . $object);
-                    }
-                }
-            }
-            rmdir($dir);
-        }
-    }
-
-    /**
-     * Helper method to restore files (separated for WP-CLI access)
-     */
-    private function restore_files_helper($backup_path) {
-        $content_dir = WP_CONTENT_DIR;
-        $zip_file = $backup_path . 'files.zip';
-
-        if (!file_exists($zip_file)) {
-            return new \WP_Error('files_backup_missing', __('Files backup file not found.', 'simple-migrator'));
-        }
-
-        if (!class_exists('ZipArchive')) {
-            return new \WP_Error('zip_missing', __('ZipArchive class not available.', 'simple-migrator'));
-        }
-
-        try {
-            $zip = new \ZipArchive();
-
-            if ($zip->open($zip_file) !== true) {
-                return new \WP_Error('zip_open_failed', __('Failed to open zip file.', 'simple-migrator'));
-            }
-
-            // Extract to wp-content
-            if ($zip->extractTo($content_dir) !== true) {
-                $zip->close();
-                return new \WP_Error('zip_extract_failed', __('Failed to extract files.', 'simple-migrator'));
-            }
-
-            $zip->close();
-
-            return true;
-        } catch (\Exception $e) {
-            return new \WP_Error('files_restore_failed', $e->getMessage());
-        }
-    }
-
-    /**
-     * Helper method to restore database (separated for WP-CLI access)
-     */
-    private function restore_database_helper($backup_path) {
-        global $wpdb;
-
-        $sql_file = $backup_path . 'database.sql';
-
-        if (!file_exists($sql_file)) {
-            return new \WP_Error('db_backup_missing', __('Database backup file not found.', 'simple-migrator'));
-        }
-
-        try {
-            // Read SQL file
-            $sql = file_get_contents($sql_file);
-
-            // Split into individual queries
-            $queries = $this->split_sql_file($sql);
-
-            // Disable foreign key checks
-            $wpdb->query('SET FOREIGN_KEY_CHECKS = 0;');
-
-            foreach ($queries as $query) {
-                if (!empty(trim($query))) {
-                    $result = $wpdb->query($query);
-                    if ($result === false) {
-                        // Log error but continue
-                        error_log('SM: Failed to execute query: ' . substr($query, 0, 100));
-                    }
-                }
-            }
-
-            // Re-enable foreign key checks
-            $wpdb->query('SET FOREIGN_KEY_CHECKS = 1;');
-
-            return true;
-
-        } catch (\Exception $e) {
-            return new \WP_Error('db_restore_failed', $e->getMessage());
-        }
     }
 }
