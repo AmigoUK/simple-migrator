@@ -1449,7 +1449,7 @@ const UI = {
         if (backups.length === 0) {
             $list.html('<div class="sm-no-backups">' +
                 '<span class="dashicons dashicons-backup" style="font-size: 48px; width: 48px; height: 48px;"></span>' +
-                '<p><?php _e('No backups found. Create a backup before migration for safety.', 'simple-migrator'); ?></p>' +
+                '<p>No backups found. Create a backup before migration for safety.</p>' +
                 '</div>');
             return;
         }
@@ -1462,7 +1462,7 @@ const UI = {
             html += '<div class="sm-backup-item ' + (isLatest ? 'latest' : '') + '">' +
                 '<div class="sm-backup-info">' +
                 '<div class="sm-backup-id">' +
-                (isLatest ? '<?php _e('Latest', 'simple-migrator'); ?> • ' : '') +
+                (isLatest ? 'Latest • ' : '') +
                 '<span class="' + statusClass + '">' + backup.status.toUpperCase() + '</span>' +
                 '</div>' +
                 '<div class="sm-backup-meta">' +
@@ -1474,10 +1474,10 @@ const UI = {
                 '</div>' +
                 '<div class="sm-backup-actions-buttons">' +
                 '<button type="button" class="button button-primary button-small sm-restore-backup" data-backup-id="' + backup.backup_id + '">' +
-                '<?php _e('Restore', 'simple-migrator'); ?>' +
+                'Restore' +
                 '</button>' +
                 '<button type="button" class="button button-small sm-delete-backup" data-backup-id="' + backup.backup_id + '">' +
-                '<?php _e('Delete', 'simple-migrator'); ?>' +
+                'Delete' +
                 '</button>' +
                 '</div>' +
                 '</div>';
@@ -1501,7 +1501,7 @@ const UI = {
      * Create backup
      */
     async createBackup() {
-        if (!confirm('<?php _e('This will create a full backup of your database and files. This may take a few minutes. Continue?', 'simple-migrator'); ?>')) {
+        if (!confirm('This will create a full backup of your database and files. This may take a few minutes. Continue?')) {
             return;
         }
 
@@ -1522,7 +1522,7 @@ const UI = {
 
             if (response.success) {
                 $fill.css('width', '100%');
-                $status.text('<?php _e('Backup created successfully!', 'simple-migrator'); ?>');
+                $status.text('Backup created successfully!');
 
                 // Reload backups list
                 setTimeout(() => {
@@ -1532,7 +1532,7 @@ const UI = {
                 }, 2000);
             }
         } catch (error) {
-            $status.text('<?php _e('Backup failed: ', 'simple-migrator'); ?> ' + error.responseText);
+            $status.text('Backup failed: ' + error.responseText);
         } finally {
             $createBtn.prop('disabled', false);
         }
@@ -1542,14 +1542,14 @@ const UI = {
      * Restore backup
      */
     async restoreBackup(backupId) {
-        const confirmMsg = '<?php _e('WARNING: This will replace your current database and files with the selected backup. All current data will be lost!\\n\\nAre you sure you want to continue?', 'simple-migrator'); ?>';
+        const confirmMsg = 'WARNING: This will replace your current database and files with the selected backup. All current data will be lost!\n\nAre you sure you want to continue?';
 
         if (!confirm(confirmMsg)) {
             return;
         }
 
         // Double confirmation
-        if (!confirm('<?php _e('This is your last chance! Type "OK" to confirm restore.', 'simple-migrator'); ?>')) {
+        if (!confirm('This is your last chance! Type "OK" to confirm restore.')) {
             return;
         }
 
@@ -1558,7 +1558,7 @@ const UI = {
         const $status = jQuery('#sm-backup-progress-status');
 
         $progress.show();
-        $status.text('<?php _e('Restoring backup... Please wait...', 'simple-migrator'); ?>');
+        $status.text('Restoring backup... Please wait...');
         $fill.css('width', '10%');
 
         try {
@@ -1570,14 +1570,14 @@ const UI = {
 
             if (response.success) {
                 $fill.css('width', '100%');
-                $status.text('<?php _e('Restore complete! Reloading page...', 'simple-migrator'); ?>');
+                $status.text('Restore complete! Reloading page...');
 
                 setTimeout(() => {
                     location.reload();
                 }, 2000);
             }
         } catch (error) {
-            $status.text('<?php _e('Restore failed: ', 'simple-migrator'); ?> ' + error.responseText);
+            $status.text('Restore failed: ' + error.responseText);
             $fill.css('width', '0%');
         }
     },
@@ -1586,7 +1586,7 @@ const UI = {
      * Delete backup
      */
     deleteBackup(backupId) {
-        if (!confirm('<?php _e('Are you sure you want to delete this backup? This cannot be undone.', 'simple-migrator'); ?>')) {
+        if (!confirm('Are you sure you want to delete this backup? This cannot be undone.')) {
             return;
         }
 
