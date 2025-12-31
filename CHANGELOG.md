@@ -2,6 +2,20 @@
 
 All notable changes to Simple Migrator will be documented in this file.
 
+## [1.0.23] - 2025-01-31
+### Fixed
+- **Critical CORS bug** - REST_Controller was never instantiated early enough
+- `handle_cors()` hook to `init` (priority 5) was never registered
+- Instance was only created during `rest_api_init`, which fires AFTER `init`
+- Now instantiates REST_Controller when file loads
+### Fixed
+- **Local development hostname recognition**
+- `is_local_origin()` now recognizes similar hostnames (e.g., developmentwp vs developmentwp2)
+- Added hostname without TLD detection (common in local dev)
+- Added `.localhost` and `.invalid` TLDs to local patterns
+
+---
+
 ## [1.0.20] - 2025-01-31
 ### Fixed
 - **Critical PHP fatal error** - `Call to undefined function Simple_Migrator\escshellcmd()`

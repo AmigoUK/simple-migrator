@@ -132,7 +132,32 @@ class REST_Controller extends WP_REST_Controller {
         }
 
         // Check for common TLDs used in local development
-        if (preg_match('/\.(local|dev|test|wp|example)$/', $host)) {
+        if (preg_match('/\.(local|dev|test|wp|example|localhost|invalid)$/', $host)) {
+            return true;
+        }
+
+        // Check for similar development hostnames (e.g., developmentwp vs developmentwp2)
+        // Get current site host for comparison
+        $current_host = parse_url(home_url(), PHP_URL_HOST);
+        if ($current_host) {
+            // Remove numeric suffixes and compare base names
+            $origin_base = preg_replace('/\d+$/', '', $host);
+            $current_base = preg_replace('/\d+$/', '', $current_host);
+
+            // If base hostnames match (with or without numbers), treat as local
+            if ($origin_base === $current_base || $host === $current_base || $current_host === $origin_base) {
+                return true;
+            }
+
+            // Allow if one is a numbered variant of the other
+            if (preg_match('/^' . preg_quote($current_base, '/') . '\d*$/', $host) ||
+                preg_match('/^' . preg_quote($origin_base, '/') . '\d*$/', $current_host)) {
+                return true;
+            }
+        }
+
+        // Check for hostname without TLD (common in local development)
+        if (!strpos($host, '.')) {
             return true;
         }
 
@@ -915,7 +940,10 @@ class REST_Controller extends WP_REST_Controller {
     }
 }
 
-// Initialize REST routes
+// Initialize REST Controller early to catch init hook for CORS
+REST_Controller::get_instance();
+
+// Register routes during rest_api_init
 add_action('rest_api_init', function() {
     REST_Controller::get_instance()->register_routes();
 });
