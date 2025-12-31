@@ -1110,6 +1110,12 @@ const UI = {
             UI.setMode(mode);
         });
 
+        // Change mode links
+        jQuery('#sm-change-mode-source, #sm-change-mode-destination').on('click', function(e) {
+            e.preventDefault();
+            UI.resetMode();
+        });
+
         // Copy key button
         jQuery('#sm-copy-key').on('click', function() {
             const key = jQuery('#sm-migration-key').text();
@@ -1182,12 +1188,15 @@ const UI = {
         jQuery('.sm-panel').hide();
 
         if (mode === 'source') {
+            jQuery('.sm-mode-selector').hide();
             jQuery('#sm-source-panel').show();
         } else if (mode === 'destination') {
+            jQuery('.sm-mode-selector').hide();
             jQuery('#sm-destination-panel').show();
             // Load saved key for development convenience
             this.loadSourceKey();
         } else {
+            jQuery('.sm-mode-selector').show();
             jQuery('#sm-no-mode-panel').show();
         }
     },
@@ -1205,6 +1214,13 @@ const UI = {
             jQuery('#sm-current-mode').val(mode);
             UI.showCurrentMode();
         });
+    },
+
+    /**
+     * Reset mode to none (show mode selector)
+     */
+    resetMode() {
+        this.setMode('none');
     },
 
     /**

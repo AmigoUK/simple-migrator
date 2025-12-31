@@ -134,6 +134,7 @@ class Admin_Page {
                 <h2>
                     <span class="dashicons dashicons-upload"></span>
                     <?php _e('Source Configuration', 'simple-migrator'); ?>
+                    <small><a href="#" id="sm-change-mode-source" style="float: right; font-weight: normal;"><?php _e('← Change Mode', 'simple-migrator'); ?></a></small>
                 </h2>
 
                 <div class="sm-card">
@@ -192,6 +193,7 @@ class Admin_Page {
                 <h2>
                     <span class="dashicons dashicons-download"></span>
                     <?php _e('Destination Configuration', 'simple-migrator'); ?>
+                    <small><a href="#" id="sm-change-mode-destination" style="float: right; font-weight: normal;"><?php _e('← Change Mode', 'simple-migrator'); ?></a></small>
                 </h2>
 
                 <div class="sm-card">
