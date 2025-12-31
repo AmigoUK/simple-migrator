@@ -2,6 +2,35 @@
 
 All notable changes to Simple Migrator will be documented in this file.
 
+## [1.0.20] - 2025-01-31
+### Fixed
+- **Critical PHP fatal error** - `Call to undefined function Simple_Migrator\escshellcmd()`
+- Used incorrect function names:
+  - `escshellcmd()` → `\escapeshellcmd()` (correct PHP function)
+  - `escshellarg()` → `\escapeshellarg()` (correct PHP function)
+- Added backslash prefix for global function calls within namespace
+- Fixed `ob_flush()` PHP notice - now only calls when buffer exists
+
+### Impact
+- Backup creation was completely broken due to fatal error
+- WordPress returned generic critical error page instead of executing backup
+- This fix restores full backup functionality
+
+---
+
+## [1.0.19] - 2025-01-31
+### Added
+- Comprehensive error logging to diagnose backup failures
+- Log all backup phases to WordPress debug log
+- Catch both Exception and Error types for complete error handling
+- Added debug output to browser console
+
+### Debugging
+- Check `/wp-content/debug.log` for detailed PHP errors
+- Console now shows line count and buffer state for troubleshooting
+
+---
+
 ## [1.0.18] - 2025-01-31
 ### Fixed
 - **Improved output buffering handling** - now clears ALL buffer levels
