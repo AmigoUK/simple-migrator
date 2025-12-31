@@ -2,6 +2,40 @@
 
 All notable changes to Simple Migrator will be documented in this file.
 
+## [1.0.27] - 2025-01-31
+### Added - WP-CLI Integration
+- **Emergency Recovery:** Restore backups when site is broken/inaccessible
+- **New WP-CLI commands:**
+  - `wp sm backup list` - List all backups with metadata
+  - `wp sm backup create [--progress]` - Create new backup
+  - `wp sm backup restore <id> [--yes] [--skip-db] [--skip-files]` - Restore backup
+  - `wp sm backup delete <id> [--yes]` - Delete a backup
+  - `wp sm backup clean --keep=3` - Keep only N most recent backups
+- **No browser needed** - All operations via SSH/CLI
+- **No PHP timeout issues** - Direct CLI execution
+- **Better error output** - Full error messages in terminal
+- **Automation ready** - Can be scripted/cron'd
+
+### New Helper Methods (Backup_Manager)
+- `get_all_backups()` - Get list of all backup IDs
+- `get_backup_metadata($id)` - Get backup metadata
+- `delete_backup($id)` - Delete a backup
+- `get_backup_dir()` - Get backup directory path
+
+### Usage Example
+```bash
+# SSH into server and navigate to WordPress
+cd /var/www/html/your-site
+
+# List backups
+wp sm backup list
+
+# Restore latest (even when site is broken)
+wp sm backup restore backup-2025-12-31-192822 --yes
+```
+
+---
+
 ## [1.0.26] - 2025-01-31
 ### Fixed - Backup Restore SQL Parsing Error
 - **Critical fix:** Backup restore now correctly handles mysqldump output
