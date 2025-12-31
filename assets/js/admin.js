@@ -1115,6 +1115,8 @@ const UI = {
             jQuery('#sm-source-panel').show();
         } else if (mode === 'destination') {
             jQuery('#sm-destination-panel').show();
+            // Load saved key for development convenience
+            this.loadSourceKey();
         } else {
             jQuery('#sm-no-mode-panel').show();
         }
@@ -1157,11 +1159,19 @@ const UI = {
         // Decode base64 encoded secret
         const sourceSecret = atob(parts[1]);
 
+        // Check if save key checkbox is enabled
+        const saveKey = jQuery('#sm-save-key').is(':checked');
+
         const $result = jQuery('#sm-connection-result');
         $result.html('<span class="sm-spinner"></span> Testing connection...').show();
 
         try {
             const info = await API.testConnection(sourceUrl, sourceSecret);
+
+            // Save key to storage if checkbox is checked
+            if (saveKey) {
+                UI.saveSourceKey(keyText);
+            }
 
             // Store connection info in state
             MigrationState.sourceUrl = sourceUrl;
@@ -1199,6 +1209,37 @@ const UI = {
                 <p>Please check the migration key and try again.</p>
             `);
         }
+    },
+
+    /**
+     * Save source key to database
+     */
+    saveSourceKey(key) {
+        jQuery.post(smData.ajaxUrl, {
+            action: 'sm_save_source_key',
+            nonce: smData.nonce,
+            key: key
+        }, function(response) {
+            if (response.success) {
+                console.log('Source key saved for development');
+            }
+        });
+    },
+
+    /**
+     * Load saved source key from database
+     */
+    loadSourceKey() {
+        jQuery.post(smData.ajaxUrl, {
+            action: 'sm_load_source_key',
+            nonce: smData.nonce
+        }, function(response) {
+            if (response.success && response.data.key) {
+                jQuery('#sm-source-key').val(response.data.key);
+                jQuery('#sm-save-key').prop('checked', true);
+                console.log('Loaded saved source key');
+            }
+        });
     },
 
     /**

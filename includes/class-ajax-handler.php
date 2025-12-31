@@ -45,6 +45,8 @@ class AJAX_Handler {
         add_action('wp_ajax_sm_set_mode', array($this, 'set_mode'));
         add_action('wp_ajax_sm_regenerate_key', array($this, 'regenerate_key'));
         add_action('wp_ajax_sm_save_source_url', array($this, 'save_source_url'));
+        add_action('wp_ajax_sm_save_source_key', array($this, 'save_source_key'));
+        add_action('wp_ajax_sm_load_source_key', array($this, 'load_source_key'));
         add_action('wp_ajax_sm_get_config', array($this, 'get_config'));
         add_action('wp_ajax_sm_prepare_database', array($this, 'prepare_database'));
         add_action('wp_ajax_sm_process_rows', array($this, 'process_rows'));
@@ -179,6 +181,58 @@ class AJAX_Handler {
         wp_send_json_success(array(
             'source_url' => $source_url
         ));
+    }
+
+    /**
+     * Save source migration key for development
+     *
+     * DEVELOPMENT USE ONLY - Key is stored base64 encoded in database
+     */
+    public function save_source_key() {
+        $verify = $this->verify_request();
+        if (is_wp_error($verify)) {
+            wp_send_json_error($verify->get_error_message());
+        }
+
+        $key = isset($_POST['key']) ? sanitize_text_field($_POST['key']) : '';
+
+        if (empty($key)) {
+            wp_send_json_error(__('Invalid key.', 'simple-migrator'));
+        }
+
+        // Validate key format
+        $parts = explode('|', $key);
+        if (count($parts) !== 2) {
+            wp_send_json_error(__('Invalid key format.', 'simple-migrator'));
+        }
+
+        // Base64 encode for basic obfuscation (not encryption!)
+        $encoded_key = base64_encode($key);
+        update_option('sm_dev_saved_source_key', $encoded_key);
+
+        wp_send_json_success();
+    }
+
+    /**
+     * Load saved source migration key
+     *
+     * DEVELOPMENT USE ONLY
+     */
+    public function load_source_key() {
+        $verify = $this->verify_request();
+        if (is_wp_error($verify)) {
+            wp_send_json_error($verify->get_error_message());
+        }
+
+        $encoded_key = get_option('sm_dev_saved_source_key', '');
+
+        if (empty($encoded_key)) {
+            wp_send_json_success(array('key' => ''));
+        }
+
+        $key = base64_decode($encoded_key);
+
+        wp_send_json_success(array('key' => $key));
     }
 
     /**

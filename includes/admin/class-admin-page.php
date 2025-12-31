@@ -206,6 +206,17 @@ class Admin_Page {
                             <textarea id="sm-source-key" class="large-text" rows="3" placeholder="<?php echo esc_attr__('https://source-site.com|your-secret-key-here', 'simple-migrator'); ?>"></textarea>
                         </div>
 
+                        <div class="sm-form-group">
+                            <label class="sm-checkbox-label">
+                                <input type="checkbox" id="sm-save-key" value="1">
+                                <span><?php _e('Save migration key for development', 'simple-migrator'); ?></span>
+                            </label>
+                            <p class="description">
+                                <strong><?php _e('⚠️ Development Only:', 'simple-migrator'); ?></strong>
+                                <?php _e('The key will be stored in your database. This is convenient for development but not recommended for production sites.', 'simple-migrator'); ?>
+                            </p>
+                        </div>
+
                         <button type="button" class="button button-primary button-large" id="sm-test-connection">
                             <span class="dashicons dashicons-admin-network"></span>
                             <?php _e('Test Connection', 'simple-migrator'); ?>
