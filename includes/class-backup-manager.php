@@ -342,16 +342,66 @@ class Backup_Manager {
      * @param callable $progress_callback Optional progress callback
      */
     private function add_files_to_zip($zip, $base_dir, $strip_length, $progress_callback = null) {
+        // Directories and files to exclude from backup
+        $exclude_patterns = array(
+            '/\.git$/',           // Git repository
+            '/\.svn$/',           // SVN repository
+            '/\.hg$/',            // Mercurial repository
+            '/\.sass-cache$/',    // Sass cache
+            '/node_modules$/',    // Node modules
+            '/\.npm$/',           // NPM cache
+            '/\.bower$/',         // Bower cache
+            '/vendor\/bower\/',   // Bower components in vendor
+            '/\.idea$/',          // JetBrains IDE
+            '/\.vscode$/',        // VS Code
+            '/\.DS_Store$/',      // macOS files
+            '/Thumbs\.db$/',      // Windows thumbnails
+            '/\.log$/',           // Log files
+        );
+
+        // Check if a path should be excluded
+        $should_exclude = function($path) use ($exclude_patterns) {
+            foreach ($exclude_patterns as $pattern) {
+                if (preg_match($pattern, $path)) {
+                    return true;
+                }
+            }
+            return false;
+        };
+
+        // Custom filter iterator that excludes certain paths
+        $filter_iterator = new \RecursiveCallbackFilterIterator(
+            new \RecursiveDirectoryIterator($base_dir, \RecursiveDirectoryIterator::SKIP_DOTS),
+            function($current, $key, $iterator) use ($should_exclude, $base_dir, $strip_length) {
+                $file_path = $current->getRealPath();
+                $relative_path = substr($file_path, strlen($base_dir) + 1);
+
+                // Skip if path matches exclusion pattern
+                if ($should_exclude($relative_path)) {
+                    return false;
+                }
+
+                return true;
+            }
+        );
+
         // First, count total files (need fresh iterator)
         $counter = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($base_dir, \RecursiveDirectoryIterator::SKIP_DOTS),
+            $filter_iterator,
             \RecursiveIteratorIterator::SELF_FIRST
         );
         $total_files = iterator_count($counter);
 
         // Now process files (new iterator)
         $files = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($base_dir, \RecursiveDirectoryIterator::SKIP_DOTS),
+            new \RecursiveCallbackFilterIterator(
+                new \RecursiveDirectoryIterator($base_dir, \RecursiveDirectoryIterator::SKIP_DOTS),
+                function($current, $key, $iterator) use ($should_exclude, $base_dir) {
+                    $file_path = $current->getRealPath();
+                    $relative_path = substr($file_path, strlen($base_dir) + 1);
+                    return !$should_exclude($relative_path);
+                }
+            ),
             \RecursiveIteratorIterator::SELF_FIRST
         );
 
@@ -471,6 +521,43 @@ class Backup_Manager {
      * @return array Array of queries
      */
     private function split_sql_file($sql) {
+        // First, pre-process to remove mysqldump warnings and error messages
+        // These can span multiple lines and don't follow standard SQL syntax
+        $lines = explode("\n", $sql);
+        $clean_lines = array();
+        $in_warning = false;
+
+        foreach ($lines as $line) {
+            $trimmed = trim($line);
+
+            // Detect mysqldump warnings/errors
+            if (preg_match('/^mysqldump(\.exe)?:/', $trimmed)) {
+                $in_warning = true;
+                continue;
+            }
+
+            // If we're in a warning block, skip until we hit valid SQL
+            if ($in_warning) {
+                // Check if this is the start of valid SQL
+                if (preg_match('/^(-- MySQL dump|\/\*!|SET |CREATE |DROP |ALTER |LOCK |UNLOCK )/', $trimmed)) {
+                    $in_warning = false;
+                    $clean_lines[] = $line;
+                }
+                // Otherwise, keep skipping warning lines
+                continue;
+            }
+
+            // Skip standalone warning/error lines
+            if (preg_match('/^(Warning:|Error:|Note:|MySQL dumpError)/', $trimmed)) {
+                continue;
+            }
+
+            $clean_lines[] = $line;
+        }
+
+        $sql = implode("\n", $clean_lines);
+
+        // Now parse the cleaned SQL
         $queries = array();
         $current_query = '';
         $in_string = false;
@@ -584,6 +671,26 @@ class Backup_Manager {
             return new \WP_Error('zip_missing', __('ZipArchive class not available.', 'simple-migrator'));
         }
 
+        // Files/directories to skip during restore (development files, etc.)
+        $skip_patterns = array(
+            '/\.git$/',           // Git repository
+            '/\.svn$/',           // SVN repository
+            '/\.hg$/',            // Mercurial repository
+            '/\.sass-cache$/',    // Sass cache
+            '/node_modules$/',    // Node modules
+            '/\.DS_Store$/',      // macOS files
+            '/Thumbs\.db$/',      // Windows thumbnails
+        );
+
+        $should_skip = function($path) use ($skip_patterns) {
+            foreach ($skip_patterns as $pattern) {
+                if (preg_match($pattern, $path)) {
+                    return true;
+                }
+            }
+            return false;
+        };
+
         try {
             $zip = new \ZipArchive();
 
@@ -591,13 +698,53 @@ class Backup_Manager {
                 return new \WP_Error('zip_open_failed', __('Failed to open zip file.', 'simple-migrator'));
             }
 
-            // Extract files
-            if ($zip->extractTo($content_dir) === false) {
-                $zip->close();
-                return new \WP_Error('zip_extract_failed', __('Failed to extract files.', 'simple-migrator'));
+            $extracted_count = 0;
+            $skipped_count = 0;
+            $failed_count = 0;
+
+            // Extract files one by one for better error handling
+            for ($i = 0; $i < $zip->numFiles; $i++) {
+                $name = $zip->getNameIndex($i);
+
+                // Skip files that match exclusion patterns
+                if ($should_skip($name)) {
+                    $skipped_count++;
+                    continue;
+                }
+
+                // Skip the backup directory itself to prevent recursion
+                if (strpos($name, 'uploads/simple-migrator/backups/') === 0) {
+                    $skipped_count++;
+                    continue;
+                }
+
+                // Extract this file
+                $result = $zip->extractTo($content_dir, $name);
+
+                if ($result) {
+                    $extracted_count++;
+                } else {
+                    $failed_count++;
+                    error_log('SM: Failed to extract: ' . $name);
+                }
             }
 
             $zip->close();
+
+            // Log summary
+            error_log(sprintf('SM: File restore complete - Extracted: %d, Skipped: %d, Failed: %d',
+                $extracted_count, $skipped_count, $failed_count));
+
+            // Only return error if everything failed
+            if ($extracted_count === 0 && $failed_count > 0) {
+                return new \WP_Error('zip_extract_failed', __('Failed to extract any files.', 'simple-migrator'));
+            }
+
+            // Warn about failures but don't fail entirely
+            if ($failed_count > 0) {
+                error_log('SM: Some files failed to extract, but restore continued.');
+            }
+
             return true;
 
         } catch (Exception $e) {
