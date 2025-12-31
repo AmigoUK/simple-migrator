@@ -168,8 +168,10 @@ class Backup_Manager {
             if ($mysql_cmd) {
                 $db_file = $backup_path . 'database.sql';
 
+                // Note: We redirect stderr to /dev/null to suppress mysqldump warnings
+                // Warnings like "Using a password on the command line..." should not be in the SQL file
                 $command = sprintf(
-                    '%s --host=%s --user=%s --password=%s --single-transaction --quick --lock-tables=false %s > %s 2>&1',
+                    '%s --host=%s --user=%s --password=%s --single-transaction --quick --lock-tables=false %s > %s 2>/dev/null',
                     \escapeshellcmd($mysql_cmd),
                     \escapeshellarg(DB_HOST),
                     \escapeshellarg(DB_USER),
@@ -463,6 +465,7 @@ class Backup_Manager {
 
     /**
      * Split SQL file into individual queries
+     * Filters out non-SQL lines (like mysqldump warnings)
      *
      * @param string $sql SQL content
      * @return array Array of queries
@@ -472,6 +475,14 @@ class Backup_Manager {
         $current_query = '';
         $in_string = false;
         $escape = false;
+
+        // SQL keywords that indicate the start of a valid query
+        $sql_keywords = array(
+            'SELECT', 'INSERT', 'UPDATE', 'DELETE', 'CREATE', 'DROP', 'ALTER',
+            'TRUNCATE', 'RENAME', 'SHOW', 'DESCRIBE', 'EXPLAIN', 'USE', 'SET',
+            'LOCK', 'UNLOCK', 'START', 'COMMIT', 'ROLLBACK', 'BEGIN', 'REPLACE',
+            'CALL', 'DECLARE', 'GRANT', 'REVOKE', '/*!', '/*', '--', 'FLUSH'
+        );
 
         for ($i = 0; $i < strlen($sql); $i++) {
             $char = $sql[$i];
@@ -491,7 +502,13 @@ class Backup_Manager {
                     $current_query .= $char;
                 } elseif ($char === ';') {
                     $current_query .= $char;
-                    $queries[] = $current_query;
+                    $trimmed = trim($current_query);
+
+                    // Only add if it looks like a valid SQL statement
+                    if (!empty($trimmed) && $this->is_valid_sql_line($trimmed, $sql_keywords)) {
+                        $queries[] = $current_query;
+                    }
+
                     $current_query = '';
                 } else {
                     $current_query .= $char;
@@ -499,11 +516,54 @@ class Backup_Manager {
             }
         }
 
+        // Handle last query (without semicolon)
         if (!empty(trim($current_query))) {
-            $queries[] = $current_query;
+            $trimmed = trim($current_query);
+            if ($this->is_valid_sql_line($trimmed, $sql_keywords)) {
+                $queries[] = $current_query;
+            }
         }
 
         return $queries;
+    }
+
+    /**
+     * Check if a line looks like valid SQL
+     *
+     * @param string $line Line to check
+     * @param array $sql_keywords Valid SQL keywords
+     * @return bool True if line looks like SQL
+     */
+    private function is_valid_sql_line($line, $sql_keywords) {
+        // Skip empty lines
+        if (empty($line)) {
+            return false;
+        }
+
+        // Skip mysqldump warnings and error messages
+        if (preg_match('/^mysqldump:/', $line)) {
+            return false;
+        }
+
+        // Skip lines that look like error messages
+        if (preg_match('/^MySQL dump|^\d+\.|Warning:|Error:|Note:/', $line)) {
+            return false;
+        }
+
+        // Check if line starts with a SQL keyword (allowing leading whitespace/comments)
+        $upper = strtoupper(trim($line));
+        foreach ($sql_keywords as $keyword) {
+            if (strpos($upper, $keyword) === 0 || strpos($upper, '/* ' . $keyword) === 0) {
+                return true;
+            }
+        }
+
+        // Also allow comment lines and MySQL-specific directives
+        if (preg_match('/^(--|#|\/\*|\/\*\!|\*\/)/', $line)) {
+            return true;
+        }
+
+        return false;
     }
 
     /**

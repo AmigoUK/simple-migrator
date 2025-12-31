@@ -2,6 +2,23 @@
 
 All notable changes to Simple Migrator will be documented in this file.
 
+## [1.0.26] - 2025-01-31
+### Fixed - Backup Restore SQL Parsing Error
+- **Critical fix:** Backup restore now correctly handles mysqldump output
+- **backup_database():** Redirect stderr to /dev/null (`2>/dev/null`) instead of including in SQL file
+- **split_sql_file():** Filter out non-SQL lines (mysqldump warnings, error messages)
+- **is_valid_sql_line():** New helper method validates SQL lines before execution
+- Previously mysqldump warnings like "Using a password on the command line..." were being
+  written to the SQL file, causing syntax errors during restore
+
+### Technical Details
+- Changed mysqldump command from `2>&1` to `2>/dev/null`
+- Added SQL keyword validation (SELECT, INSERT, CREATE, DROP, etc.)
+- Skip lines starting with: mysqldump:, Warning:, Error:, Note:, MySQL dump
+- Allows valid SQL comments (--, #, /* */)
+
+---
+
 ## [1.0.25] - 2025-01-31
 ### Fixed - Session Loss During Migration
 - **Critical fix:** WordPress session no longer breaks during migration
