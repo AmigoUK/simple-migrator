@@ -41,55 +41,102 @@ class REST_Controller extends WP_REST_Controller {
     public function __construct() {
         $this->namespace = SM_API_NAMESPACE;
 
-        // Add CORS headers
-        add_action('rest_api_init', array($this, 'add_cors_headers'));
+        // Hook CORS handling as early as possible to catch preflight OPTIONS requests
+        add_action('init', array($this, 'handle_cors'), 5);
+        add_action('rest_api_init', array($this, 'register_routes'));
         add_filter('rest_pre_serve_request', array($this, 'add_cors_headers_to_response'));
     }
 
     /**
-     * Add CORS headers for cross-origin requests
-     * Only allows requests from known origins
+     * Handle CORS headers for cross-origin requests
+     * Called early to catch preflight OPTIONS requests
      */
-    public function add_cors_headers() {
+    public function handle_cors() {
+        // Only handle requests to our API namespace
+        $request_uri = isset($_SERVER['REQUEST_URI']) ? $_SERVER['REQUEST_URI'] : '';
+
+        // Check if this is a request to our API
+        if (strpos($request_uri, '/wp-json/simple-migrator/') === false) {
+            return;
+        }
+
+        // Get the origin
+        $origin = $this->get_request_origin();
+
+        if (!$origin) {
+            return;
+        }
+
+        // For development, allow all local/private IP addresses
+        $is_local = $this->is_local_origin($origin);
+
+        // Get allowed origins list
+        $allowed_origins = $this->get_allowed_origins();
+        $is_allowed = in_array($origin, $allowed_origins, true);
+
+        // Allow if in whitelist OR is local development
+        $should_allow = $is_allowed || $is_local;
+
         // Handle preflight OPTIONS request
         if (isset($_SERVER['REQUEST_METHOD']) && $_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
-            status_header(200);
-
-            // Get the origin whitelist
-            $allowed_origins = $this->get_allowed_origins();
-            $origin = $this->get_request_origin();
-
-            // Allow all headers that might be needed
-            $allowed_headers = array(
-                'Access-Control-Allow-Headers',
-                'X-Migration-Secret',
-                'Content-Type',
-                'Authorization',
-                'X-WP-Nonce'
-            );
-
-            // Only set CORS headers for allowed origins
-            if ($origin && in_array($origin, $allowed_origins, true)) {
+            if ($should_allow) {
+                status_header(200);
                 header('Access-Control-Allow-Origin: ' . $origin);
                 header('Access-Control-Allow-Credentials: true');
                 header('Access-Control-Allow-Methods: POST, GET, OPTIONS');
-                header('Access-Control-Allow-Headers: ' . implode(', ', $allowed_headers));
+                header('Access-Control-Allow-Headers: X-Migration-Secret, Content-Type, Authorization, X-WP-Nonce');
                 header('Access-Control-Max-Age: 86400');
-            } else {
-                // For development, allow same-origin requests
-                // In production, you may want to be more restrictive
-                $site_url = site_url();
-                $parsed = parse_url($site_url);
-                $same_origin = isset($parsed['scheme']) && isset($parsed['host']);
-                if ($same_origin && $origin === $site_url) {
-                    header('Access-Control-Allow-Origin: ' . $origin);
-                    header('Access-Control-Allow-Methods: POST, GET, OPTIONS');
-                    header('Access-Control-Allow-Headers: ' . implode(', ', $allowed_headers));
-                }
+                exit;
             }
-
-            exit;
         }
+
+        // Add CORS headers to actual requests if allowed
+        if ($should_allow) {
+            header('Access-Control-Allow-Origin: ' . $origin);
+            header('Access-Control-Allow-Credentials: true');
+        }
+    }
+
+    /**
+     * Check if the origin is a local/private address
+     *
+     * @param string $origin The origin URL
+     * @return bool True if local/private
+     */
+    private function is_local_origin($origin) {
+        $parsed = parse_url($origin);
+
+        if (!isset($parsed['host'])) {
+            return false;
+        }
+
+        $host = $parsed['host'];
+
+        // Check for localhost variants
+        $local_patterns = array(
+            'localhost',
+            '127.0.0.1',
+            '::1',
+        );
+
+        // Check for exact match
+        if (in_array($host, $local_patterns, true)) {
+            return true;
+        }
+
+        // Check for private IP ranges (RFC 1918)
+        if (preg_match('/^10\./', $host) ||
+            preg_match('/^172\.(1[6-9]|2[0-9]|3[0-1])\./', $host) ||
+            preg_match('/^192\.168\./', $host)) {
+            return true;
+        }
+
+        // Check for common TLDs used in local development
+        if (preg_match('/\.(local|dev|test|wp|example)$/', $host)) {
+            return true;
+        }
+
+        return false;
     }
 
     /**
