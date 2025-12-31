@@ -1,0 +1,30 @@
+# WordPress
+*.log
+wp-config.php
+wp-content/advanced-cache.php
+wp-content/backup-db/
+wp-content/backups/
+wp-content/cache/
+wp-content/uploads/
+wp-content/upgrade/
+wp-content/wp-cache-config.php
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# OS
+.Thumbs.db
+.DS_Store
+
+# Composer
+/vendor/
+node_modules/
+
+# Build
+*.min.js.map
+*.css.map
