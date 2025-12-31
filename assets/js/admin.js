@@ -1412,6 +1412,23 @@ const UI = {
     },
 
     /**
+     * Format seconds to human readable time
+     */
+    formatTime(seconds) {
+        if (seconds < 60) {
+            return Math.round(seconds) + 's';
+        } else if (seconds < 3600) {
+            const minutes = Math.floor(seconds / 60);
+            const secs = Math.round(seconds % 60);
+            return `${minutes}m ${secs}s`;
+        } else {
+            const hours = Math.floor(seconds / 3600);
+            const minutes = Math.floor((seconds % 3600) / 60);
+            return `${hours}h ${minutes}m`;
+        }
+    },
+
+    /**
      * Regenerate key
      */
     regenerateKey() {
@@ -1427,16 +1444,39 @@ const UI = {
     },
 
     /**
-     * Load backups list
+     * Load backups list with error handling
      */
     loadBackups() {
+        const $list = jQuery('#sm-backup-list');
+        $list.html('<p class="description">Loading backups...</p>');
+
         jQuery.post(smData.ajaxUrl, {
             action: 'sm_list_backups',
             nonce: smData.nonce
         }, function(response) {
             if (response.success) {
                 UI.renderBackupList(response.data.backups);
+            } else {
+                $list.html(`
+                    <div class="sm-error-message" style="color: #d63638; padding: 10px; background: #fff; border-left: 4px solid #d63638;">
+                        <strong>Failed to load backups:</strong><br>
+                        <code>${response.data || 'Unknown error'}</code>
+                    </div>
+                `);
             }
+        }).fail(function(xhr, status, error) {
+            $list.html(`
+                <div class="sm-error-message" style="color: #d63638; padding: 10px; background: #fff; border-left: 4px solid #d63638;">
+                    <strong>Failed to load backups:</strong><br>
+                    <code>${error || 'Network error'}</code><br>
+                    <small>Check browser console (F12) for details</small>
+                </div>
+            `);
+            console.error('Load backups error:', {
+                status: status,
+                error: error,
+                response: xhr.responseText
+            });
         });
     },
 
@@ -1498,7 +1538,7 @@ const UI = {
     },
 
     /**
-     * Create backup
+     * Create backup with real-time progress tracking
      */
     async createBackup() {
         if (!confirm('This will create a full backup of your database and files. This may take a few minutes. Continue?')) {
@@ -1512,27 +1552,103 @@ const UI = {
 
         $createBtn.prop('disabled', true);
         $progress.show();
+        $fill.css('width', '0%');
+        $status.html('Initializing backup...<br><small>Starting in 1 second...</small>');
 
         try {
-            // Start backup creation
-            const response = await jQuery.post(smData.ajaxUrl, {
-                action: 'sm_create_backup',
-                nonce: smData.nonce
+            const startTime = Date.now();
+
+            // Use fetch for streaming response
+            const response = await fetch(smData.ajaxUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: new URLSearchParams({
+                    action: 'sm_create_backup',
+                    nonce: smData.nonce
+                })
             });
 
-            if (response.success) {
-                $fill.css('width', '100%');
-                $status.text('Backup created successfully!');
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
 
-                // Reload backups list
+            // Read the response as a stream of JSON lines
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+            let finalResult = null;
+
+            while (true) {
+                const { done, value } = await reader.read();
+
+                if (done) break;
+
+                buffer += decoder.decode(value, { stream: true });
+
+                // Split by newlines and process each complete JSON line
+                const lines = buffer.split('\n');
+                buffer = lines.pop() || ''; // Keep incomplete line in buffer
+
+                for (const line of lines) {
+                    if (line.trim()) {
+                        try {
+                            const data = JSON.parse(line);
+
+                            // Check if this is a progress update or final result
+                            if (data.progress !== undefined) {
+                                // Progress update
+                                $fill.css('width', data.progress + '%');
+
+                                const elapsed = UI.formatTime(data.elapsed);
+                                const remaining = data.remaining < 9999 ?
+                                    UI.formatTime(data.remaining) : 'calculating...';
+
+                                $status.html(`
+                                    ${data.message}<br>
+                                    <small>Time: ${elapsed} elapsed, ~${remaining} remaining</small>
+                                `);
+                            } else if (data.success) {
+                                // Final result
+                                finalResult = data;
+                            } else if (data.data) {
+                                // WordPress AJAX success format
+                                finalResult = data.data;
+                            }
+                        } catch (e) {
+                            console.warn('Failed to parse backup progress:', line, e);
+                        }
+                    }
+                }
+            }
+
+            if (finalResult) {
+                $fill.css('width', '100%');
+
+                const totalTime = finalResult.total_time ?
+                    UI.formatTime(finalResult.total_time) : UI.formatTime((Date.now() - startTime) / 1000);
+
+                $status.html(`
+                    <strong>✓ Backup created successfully!</strong><br>
+                    <small>Total time: ${totalTime}</small>
+                `);
+
+                // Reload backups list after a short delay
                 setTimeout(() => {
                     $progress.hide();
                     $fill.css('width', '0%');
                     UI.loadBackups();
                 }, 2000);
+            } else {
+                throw new Error('No response from server');
             }
         } catch (error) {
-            $status.text('Backup failed: ' + error.responseText);
+            console.error('Backup error:', error);
+            $status.html(`
+                <strong style="color: #d63638;">✗ Backup failed!</strong><br>
+                <small>Error: ${error.message}</small>
+            `);
         } finally {
             $createBtn.prop('disabled', false);
         }

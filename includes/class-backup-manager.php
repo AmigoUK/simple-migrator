@@ -71,7 +71,7 @@ class Backup_Manager {
     }
 
     /**
-     * Create a full backup
+     * Create a full backup with detailed progress
      *
      * @param bool $progress_callback Optional callback for progress updates
      * @return array|WP_Error Backup info or error
@@ -87,29 +87,37 @@ class Backup_Manager {
         }
 
         if ($progress_callback) {
-            call_user_func($progress_callback, 5, __('Creating backup directory...', 'simple-migrator'));
+            call_user_func($progress_callback, 3, __('Creating backup directory...', 'simple-migrator'));
         }
 
         $errors = array();
 
         // Backup database
-        $db_result = $this->backup_database($backup_path);
+        if ($progress_callback) {
+            call_user_func($progress_callback, 5, __('Starting database backup...', 'simple-migrator'));
+        }
+
+        $db_result = $this->backup_database($backup_path, $progress_callback);
         if (is_wp_error($db_result)) {
             $errors[] = $db_result->get_error_message();
         }
 
         if ($progress_callback) {
-            call_user_func($progress_callback, 50, __('Database backed up, backing up files...', 'simple-migrator'));
+            call_user_func($progress_callback, 55, __('Database backed up, preparing file backup...', 'simple-migrator'));
         }
 
         // Backup files
-        $files_result = $this->backup_files($backup_path);
+        if ($progress_callback) {
+            call_user_func($progress_callback, 60, __('Starting file backup (this may take a while)...', 'simple-migrator'));
+        }
+
+        $files_result = $this->backup_files($backup_path, $progress_callback);
         if (is_wp_error($files_result)) {
             $errors[] = $files_result->get_error_message();
         }
 
         if ($progress_callback) {
-            call_user_func($progress_callback, 90, __('Cleaning up old backups...', 'simple-migrator'));
+            call_user_func($progress_callback, 90, __('Creating backup metadata...', 'simple-migrator'));
         }
 
         // Create backup metadata
@@ -130,22 +138,27 @@ class Backup_Manager {
         file_put_contents($backup_path . 'backup.json', wp_json_encode($metadata, JSON_PRETTY_PRINT));
 
         if ($progress_callback) {
-            call_user_func($progress_callback, 100, __('Backup complete!', 'simple-migrator'));
+            call_user_func($progress_callback, 95, __('Cleaning up old backups...', 'simple-migrator'));
         }
 
         // Clean up old backups
         $this->cleanup_old_backups();
 
+        if ($progress_callback) {
+            call_user_func($progress_callback, 100, __('Backup complete!', 'simple-migrator'));
+        }
+
         return $metadata;
     }
 
     /**
-     * Backup database
+     * Backup database with progress tracking
      *
      * @param string $backup_path Backup directory path
+     * @param callable $progress_callback Optional progress callback
      * @return true|WP_Error
      */
-    private function backup_database($backup_path) {
+    private function backup_database($backup_path, $progress_callback = null) {
         global $wpdb;
 
         try {
@@ -169,13 +182,13 @@ class Backup_Manager {
 
                 if ($return_code !== 0 || !file_exists($db_file) || filesize($db_file) === 0) {
                     // Fallback to PHP dump
-                    return $this->backup_database_php($backup_path);
+                    return $this->backup_database_php($backup_path, $progress_callback);
                 }
 
                 return true;
             } else {
                 // Use PHP-based dump
-                return $this->backup_database_php($backup_path);
+                return $this->backup_database_php($backup_path, $progress_callback);
             }
         } catch (Exception $e) {
             return new \WP_Error('db_backup_failed', $e->getMessage());
@@ -183,12 +196,13 @@ class Backup_Manager {
     }
 
     /**
-     * Backup database using PHP (fallback)
+     * Backup database using PHP (fallback) with progress tracking
      *
      * @param string $backup_path Backup directory path
+     * @param callable $progress_callback Optional progress callback
      * @return true|WP_Error
      */
-    private function backup_database_php($backup_path) {
+    private function backup_database_php($backup_path, $progress_callback = null) {
         global $wpdb;
 
         try {
@@ -274,12 +288,13 @@ class Backup_Manager {
     }
 
     /**
-     * Backup files
+     * Backup files with progress tracking
      *
      * @param string $backup_path Backup directory path
+     * @param callable $progress_callback Optional progress callback
      * @return true|WP_Error
      */
-    private function backup_files($backup_path) {
+    private function backup_files($backup_path, $progress_callback = null) {
         $content_dir = WP_CONTENT_DIR;
         $zip_file = $backup_path . 'files.zip';
 
@@ -294,8 +309,16 @@ class Backup_Manager {
                 return new \WP_Error('zip_create_failed', __('Failed to create zip file.', 'simple-migrator'));
             }
 
-            // Add files to archive
-            $this->add_files_to_zip($zip, $content_dir, strlen($content_dir) + 1);
+            // Add files to archive with progress tracking
+            if ($progress_callback) {
+                call_user_func($progress_callback, 65, __('Scanning files for backup...', 'simple-migrator'));
+            }
+
+            $this->add_files_to_zip($zip, $content_dir, strlen($content_dir) + 1, $progress_callback);
+
+            if ($progress_callback) {
+                call_user_func($progress_callback, 85, __('Compressing files...', 'simple-migrator'));
+            }
 
             if ($zip->close() === false) {
                 return new \WP_Error('zip_close_failed', __('Failed to close zip file.', 'simple-migrator'));
@@ -309,17 +332,28 @@ class Backup_Manager {
     }
 
     /**
-     * Recursively add files to zip
+     * Recursively add files to zip with progress tracking
      *
      * @param \ZipArchive $zip ZipArchive instance
      * @param string $base_dir Base directory
      * @param int $strip_length Length to strip from paths
+     * @param callable $progress_callback Optional progress callback
      */
-    private function add_files_to_zip($zip, $base_dir, $strip_length) {
+    private function add_files_to_zip($zip, $base_dir, $strip_length, $progress_callback = null) {
+        // First, count total files (need fresh iterator)
+        $counter = new \RecursiveIteratorIterator(
+            new \RecursiveDirectoryIterator($base_dir, \RecursiveDirectoryIterator::SKIP_DOTS),
+            \RecursiveIteratorIterator::SELF_FIRST
+        );
+        $total_files = iterator_count($counter);
+
+        // Now process files (new iterator)
         $files = new \RecursiveIteratorIterator(
             new \RecursiveDirectoryIterator($base_dir, \RecursiveDirectoryIterator::SKIP_DOTS),
             \RecursiveIteratorIterator::SELF_FIRST
         );
+
+        $file_count = 0;
 
         foreach ($files as $file) {
             $file_path = $file->getRealPath();
@@ -329,6 +363,12 @@ class Backup_Manager {
                 $zip->addEmptyDir($relative_path);
             } else {
                 $zip->addFile($file_path, $relative_path);
+            }
+
+            // Update progress every 100 files
+            if ($progress_callback && ++$file_count % 100 === 0) {
+                $progress = 65 + (($file_count / $total_files) * 20); // 65-85% range
+                call_user_func($progress_callback, $progress, sprintf(__('Adding files to archive (%d/%d)...', 'simple-migrator'), $file_count, $total_files));
             }
         }
     }
@@ -599,7 +639,7 @@ class Backup_Manager {
     }
 
     /**
-     * AJAX: Create backup
+     * AJAX: Create backup with progress tracking
      */
     public function ajax_create_backup() {
         $verify = $this->verify_request();
@@ -607,11 +647,36 @@ class Backup_Manager {
             wp_send_json_error($verify->get_error_message());
         }
 
-        $result = $this->create_backup();
+        // Start time for calculation
+        $start_time = microtime(true);
+
+        // Send progress updates during backup
+        $result = $this->create_backup(function($progress, $message) use ($start_time) {
+            // Calculate elapsed time
+            $elapsed = microtime(true) - $start_time;
+
+            // Estimate remaining time (rough calculation)
+            $estimated_total = $elapsed / ($progress / 100);
+            $remaining = max(0, $estimated_total - $elapsed);
+
+            // Send progress update
+            echo json_encode(array(
+                'progress' => $progress,
+                'message' => $message,
+                'elapsed' => round($elapsed, 1),
+                'remaining' => round($remaining, 1)
+            ));
+            echo "\n";
+            ob_flush();
+            flush();
+        });
 
         if (is_wp_error($result)) {
             wp_send_json_error($result->get_error_message());
         }
+
+        // Add total time to result
+        $result['total_time'] = round(microtime(true) - $start_time, 1);
 
         wp_send_json_success($result);
     }
@@ -688,7 +753,13 @@ class Backup_Manager {
             return new \WP_Error('permission_denied', __('You do not have permission to perform this action.', 'simple-migrator'));
         }
 
-        if (!isset($_POST['nonce']) || !wp_verify_nonce($_POST['nonce'], 'sm_nonce')) {
+        // Check both POST and JSON input for nonce
+        $nonce = isset($_POST['nonce']) ? $_POST['nonce'] : null;
+        if (!$nonce && isset($_SERVER['HTTP_X_WP_NONCE'])) {
+            $nonce = $_SERVER['HTTP_X_WP_NONCE'];
+        }
+
+        if (!$nonce || !wp_verify_nonce($nonce, 'wp_rest')) {
             return new \WP_Error('invalid_nonce', __('Invalid security token.', 'simple-migrator'));
         }
 
