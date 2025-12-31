@@ -278,6 +278,40 @@ class Admin_Page {
                         </button>
                     </div>
                 </div>
+
+                <div class="sm-card">
+                    <h3>
+                        <span class="dashicons dashicons-backup"></span>
+                        <?php _e('Backup Management', 'simple-migrator'); ?>
+                        <small><?php _e('(Development Safety)', 'simple-migrator'); ?></small>
+                    </h3>
+                    <p class="description">
+                        <?php _e('Create backups before migration to quickly restore if something goes wrong. Backups are stored in your uploads directory.', 'simple-migrator'); ?>
+                    </p>
+
+                    <div class="sm-backup-actions">
+                        <button type="button" class="button button-secondary" id="sm-create-backup">
+                            <span class="dashicons dashicons-plus-alt"></span>
+                            <?php _e('Create Full Backup', 'simple-migrator'); ?>
+                        </button>
+
+                        <button type="button" class="button" id="sm-refresh-backups">
+                            <span class="dashicons dashicons-update"></span>
+                            <?php _e('Refresh List', 'simple-migrator'); ?>
+                        </button>
+                    </div>
+
+                    <div id="sm-backup-progress" class="sm-backup-progress" style="display: none;">
+                        <div class="sm-progress-bar">
+                            <div class="sm-progress-fill" id="sm-backup-progress-fill" style="width: 0%;"></div>
+                        </div>
+                        <div class="sm-progress-status" id="sm-backup-progress-status"><?php _e('Preparing...', 'simple-migrator'); ?></div>
+                    </div>
+
+                    <div id="sm-backup-list" class="sm-backup-list">
+                        <p class="description"><?php _e('Loading backups...', 'simple-migrator'); ?></p>
+                    </div>
+                </div>
             </div>
 
             <div id="sm-no-mode-panel" class="sm-panel">

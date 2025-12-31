@@ -481,6 +481,61 @@ const Orchestrator = {
         MigrationState.stats.startTime = new Date().toISOString();
         MigrationState.save();
 
+        // Check for recent backup before starting migration (development safety)
+        try {
+            const backupCheck = await jQuery.ajax({
+                url: smData.ajaxUrl,
+                method: 'POST',
+                data: {
+                    action: 'sm_list_backups',
+                    nonce: smData.nonce
+                }
+            });
+
+            if (backupCheck.success && backupCheck.data.backups.length > 0) {
+                const latestBackup = backupCheck.data.backups[0];
+                const backupTime = new Date(latestBackup.created_at);
+                const now = new Date();
+                const hoursSinceBackup = (now - backupTime) / (1000 * 60 * 60);
+
+                if (hoursSinceBackup > 1) {
+                    const proceed = confirm(
+                        'Simple Migrator - Development Safety Check\n\n' +
+                        'Your latest backup is ' + Math.round(hoursSinceBackup) + ' hours old.\n\n' +
+                        'For development safety, consider creating a fresh backup before migration.\n' +
+                        'Click "OK" to create a backup first,\n' +
+                        'Click "Cancel" to proceed with migration anyway.'
+                    );
+
+                    if (proceed) {
+                        // Create backup first
+                        await UI.createBackup();
+
+                        // Wait a bit for backup to complete
+                        await new Promise(resolve => setTimeout(resolve, 3000));
+                    }
+                }
+            } else {
+                const proceed = confirm(
+                    'Simple Migrator - Development Safety Check\n\n' +
+                    'No backups found!\n\n' +
+                    'For development safety, we strongly recommend creating a backup before migration.\n' +
+                    'Click "OK" to create a backup first,\n' +
+                    'Click "Cancel" to proceed with migration anyway.'
+                );
+
+                if (proceed) {
+                    // Create backup first
+                    await UI.createBackup();
+
+                    // Wait a bit for backup to complete
+                    await new Promise(resolve => setTimeout(resolve, 3000));
+                }
+            }
+        } catch (error) {
+            console.log('Backup check failed, proceeding with migration:', error);
+        }
+
         try {
             MigrationState.setPhase('scan');
             await this.scanPhase();
@@ -1101,6 +1156,21 @@ const UI = {
         jQuery('#sm-cancel-migration').on('click', function() {
             Orchestrator.cancel();
         });
+
+        // Backup management buttons
+        jQuery('#sm-create-backup').on('click', function() {
+            UI.createBackup();
+        });
+
+        jQuery('#sm-refresh-backups').on('click', function() {
+            UI.loadBackups();
+        });
+
+        // Load backups when in destination mode
+        const mode = jQuery('#sm-current-mode').val();
+        if (mode === 'destination') {
+            UI.loadBackups();
+        }
     },
 
     /**
@@ -1336,6 +1406,181 @@ const UI = {
             if (response.success) {
                 // Reload page to show new key
                 location.reload();
+            }
+        });
+    },
+
+    /**
+     * Load backups list
+     */
+    loadBackups() {
+        jQuery.post(smData.ajaxUrl, {
+            action: 'sm_list_backups',
+            nonce: smData.nonce
+        }, function(response) {
+            if (response.success) {
+                UI.renderBackupList(response.data.backups);
+            }
+        });
+    },
+
+    /**
+     * Render backups list
+     */
+    renderBackupList(backups) {
+        const $list = jQuery('#sm-backup-list');
+
+        if (backups.length === 0) {
+            $list.html('<div class="sm-no-backups">' +
+                '<span class="dashicons dashicons-backup" style="font-size: 48px; width: 48px; height: 48px;"></span>' +
+                '<p><?php _e('No backups found. Create a backup before migration for safety.', 'simple-migrator'); ?></p>' +
+                '</div>');
+            return;
+        }
+
+        let html = '';
+        backups.forEach((backup, index) => {
+            const isLatest = index === 0;
+            const statusClass = backup.status === 'complete' ? 'sm-backup-status-complete' : 'sm-backup-status-partial';
+
+            html += '<div class="sm-backup-item ' + (isLatest ? 'latest' : '') + '">' +
+                '<div class="sm-backup-info">' +
+                '<div class="sm-backup-id">' +
+                (isLatest ? '<?php _e('Latest', 'simple-migrator'); ?> • ' : '') +
+                '<span class="' + statusClass + '">' + backup.status.toUpperCase() + '</span>' +
+                '</div>' +
+                '<div class="sm-backup-meta">' +
+                '<span><span class="dashicons dashicons-calendar-alt"></span>' + backup.created_at + '</span>' +
+                '<span><span class="dashicons dashicons-database"></span>' + UI.formatBytes(backup.db_size) + '</span>' +
+                '<span><span class="dashicons dashicons-media-archive"></span>' + UI.formatBytes(backup.files_size) + '</span>' +
+                '<span><span class="dashicons dashicons-admin-generic"></span>' + UI.formatBytes(backup.total_size) + '</span>' +
+                '</div>' +
+                '</div>' +
+                '<div class="sm-backup-actions-buttons">' +
+                '<button type="button" class="button button-primary button-small sm-restore-backup" data-backup-id="' + backup.backup_id + '">' +
+                '<?php _e('Restore', 'simple-migrator'); ?>' +
+                '</button>' +
+                '<button type="button" class="button button-small sm-delete-backup" data-backup-id="' + backup.backup_id + '">' +
+                '<?php _e('Delete', 'simple-migrator'); ?>' +
+                '</button>' +
+                '</div>' +
+                '</div>';
+        });
+
+        $list.html(html);
+
+        // Bind event handlers
+        jQuery('.sm-restore-backup').on('click', function() {
+            const backupId = jQuery(this).data('backup-id');
+            UI.restoreBackup(backupId);
+        });
+
+        jQuery('.sm-delete-backup').on('click', function() {
+            const backupId = jQuery(this).data('backup-id');
+            UI.deleteBackup(backupId);
+        });
+    },
+
+    /**
+     * Create backup
+     */
+    async createBackup() {
+        if (!confirm('<?php _e('This will create a full backup of your database and files. This may take a few minutes. Continue?', 'simple-migrator'); ?>')) {
+            return;
+        }
+
+        const $progress = jQuery('#sm-backup-progress');
+        const $fill = jQuery('#sm-backup-progress-fill');
+        const $status = jQuery('#sm-backup-progress-status');
+        const $createBtn = jQuery('#sm-create-backup');
+
+        $createBtn.prop('disabled', true);
+        $progress.show();
+
+        try {
+            // Start backup creation
+            const response = await jQuery.post(smData.ajaxUrl, {
+                action: 'sm_create_backup',
+                nonce: smData.nonce
+            });
+
+            if (response.success) {
+                $fill.css('width', '100%');
+                $status.text('<?php _e('Backup created successfully!', 'simple-migrator'); ?>');
+
+                // Reload backups list
+                setTimeout(() => {
+                    $progress.hide();
+                    $fill.css('width', '0%');
+                    UI.loadBackups();
+                }, 2000);
+            }
+        } catch (error) {
+            $status.text('<?php _e('Backup failed: ', 'simple-migrator'); ?> ' + error.responseText);
+        } finally {
+            $createBtn.prop('disabled', false);
+        }
+    },
+
+    /**
+     * Restore backup
+     */
+    async restoreBackup(backupId) {
+        const confirmMsg = '<?php _e('WARNING: This will replace your current database and files with the selected backup. All current data will be lost!\\n\\nAre you sure you want to continue?', 'simple-migrator'); ?>';
+
+        if (!confirm(confirmMsg)) {
+            return;
+        }
+
+        // Double confirmation
+        if (!confirm('<?php _e('This is your last chance! Type "OK" to confirm restore.', 'simple-migrator'); ?>')) {
+            return;
+        }
+
+        const $progress = jQuery('#sm-backup-progress');
+        const $fill = jQuery('#sm-backup-progress-fill');
+        const $status = jQuery('#sm-backup-progress-status');
+
+        $progress.show();
+        $status.text('<?php _e('Restoring backup... Please wait...', 'simple-migrator'); ?>');
+        $fill.css('width', '10%');
+
+        try {
+            const response = await jQuery.post(smData.ajaxUrl, {
+                action: 'sm_restore_backup',
+                nonce: smData.nonce,
+                backup_id: backupId
+            });
+
+            if (response.success) {
+                $fill.css('width', '100%');
+                $status.text('<?php _e('Restore complete! Reloading page...', 'simple-migrator'); ?>');
+
+                setTimeout(() => {
+                    location.reload();
+                }, 2000);
+            }
+        } catch (error) {
+            $status.text('<?php _e('Restore failed: ', 'simple-migrator'); ?> ' + error.responseText);
+            $fill.css('width', '0%');
+        }
+    },
+
+    /**
+     * Delete backup
+     */
+    deleteBackup(backupId) {
+        if (!confirm('<?php _e('Are you sure you want to delete this backup? This cannot be undone.', 'simple-migrator'); ?>')) {
+            return;
+        }
+
+        jQuery.post(smData.ajaxUrl, {
+            action: 'sm_delete_backup',
+            nonce: smData.nonce,
+            backup_id: backupId
+        }, function(response) {
+            if (response.success) {
+                UI.loadBackups();
             }
         });
     }

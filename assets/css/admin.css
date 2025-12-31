@@ -302,3 +302,94 @@
 .sm-checkbox-label span {
     font-weight: 500;
 }
+
+/* Backup Management Styles */
+.sm-backup-actions {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+}
+
+.sm-backup-list {
+    margin-top: 20px;
+    border-top: 1px solid #ddd;
+    padding-top: 20px;
+}
+
+.sm-backup-item {
+    background: #f9f9f9;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    padding: 15px;
+    margin-bottom: 10px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 15px;
+}
+
+.sm-backup-item.latest {
+    border-left: 4px solid #0073aa;
+    background: #f0f6fc;
+}
+
+.sm-backup-info {
+    flex: 1;
+    min-width: 200px;
+}
+
+.sm-backup-id {
+    font-weight: 600;
+    margin-bottom: 5px;
+    color: #333;
+}
+
+.sm-backup-meta {
+    font-size: 12px;
+    color: #666;
+    display: flex;
+    gap: 15px;
+    flex-wrap: wrap;
+}
+
+.sm-backup-meta span {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.sm-backup-actions-buttons {
+    display: flex;
+    gap: 8px;
+}
+
+.sm-backup-actions-buttons .button {
+    padding: 5px 10px;
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+.sm-backup-progress {
+    margin: 20px 0;
+    padding: 15px;
+    background: #f9f9f9;
+    border-radius: 4px;
+}
+
+.sm-backup-status-complete {
+    color: #00a32a;
+}
+
+.sm-backup-status-partial {
+    color: #d63638;
+}
+
+.sm-no-backups {
+    padding: 30px;
+    text-align: center;
+    background: #f9f9f9;
+    border-radius: 4px;
+    color: #666;
+}
