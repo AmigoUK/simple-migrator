@@ -3,7 +3,7 @@
  * Plugin Name: Simple Migrator
  * Plugin URI: https://github.com/AmigoUK/simple-migrator
  * Description: Distributed, peer-to-peer WordPress migration plugin for reliable 1:1 site cloning with bit-by-bit transfer technology.
- * Version: 1.0.23
+ * Version: 1.0.24
  * Author: Tomasz 'Amigo' Lewandowski
  * Author URI: https://www.attv.uk
  * License: GPL v2 or later
@@ -27,9 +27,33 @@ if (!defined('ABSPATH')) {
 define('SM_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('SM_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('SM_PLUGIN_BASENAME', plugin_basename(__FILE__));
-define('SM_VERSION', '1.0.23');
+define('SM_VERSION', '1.0.24');
 define('SM_API_NAMESPACE', 'simple-migrator/v1');
 define('SM_CHUNK_SIZE', 2 * 1024 * 1024); // 2MB chunks
+
+/**
+ * Smart Merge Mode - Protected Tables and Options
+ * These are preserved during migration to keep destination site functional
+ */
+// Tables to preserve (truncate instead of drop)
+define('SM_PROTECTED_TABLES', json_encode(array(
+    'users',      // Preserve destination admin accounts (without prefix)
+    'usermeta',   // Preserve user capabilities and roles (without prefix)
+)));
+
+// wp_options entries to preserve - these keep destination site functional
+define('SM_PROTECTED_OPTIONS', json_encode(array(
+    'siteurl',        // Destination site URL
+    'home',           // Destination home URL
+    'admin_email',    // Destination admin email
+    'active_plugins', // Destination active plugins
+    'current_theme',  // Destination active theme
+    'template',       // Destination template
+    'stylesheet',     // Destination stylesheet
+    'sm_migration_secret',  // Destination migration secret
+    'sm_source_url',  // Destination source URL
+    'sm_source_mode', // Destination mode
+)));
 
 /**
  * Autoloader

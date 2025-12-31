@@ -2,6 +2,30 @@
 
 All notable changes to Simple Migrator will be documented in this file.
 
+## [1.0.24] - 2025-01-31
+### Fixed - Smart Merge Mode
+- **Critical fix:** WordPress no longer goes into install mode during migration
+- **Protected wp_users and wp_usermeta tables** - Destination admin account is now preserved
+- **Protected critical wp_options entries:**
+  - siteurl, home (destination site URLs preserved)
+  - admin_email, active_plugins, current_theme
+  - template, stylesheet
+  - sm_migration_secret, sm_source_url, sm_source_mode
+- **New finalize_migration() AJAX endpoint** - Restores preserved settings after database phase
+- **prepare_database() now:**
+  - Preserves critical options BEFORE dropping tables
+  - Preserves admin account before truncating wp_users
+  - Truncates protected tables instead of dropping (preserves structure)
+  - Returns both `dropped` and `preserved` table lists
+
+### Technical Details
+- Added `SM_PROTECTED_TABLES` constant for tables to truncate (not drop)
+- Added `SM_PROTECTED_OPTIONS` constant for wp_options entries to preserve
+- Methods: `preserve_critical_options()`, `preserve_admin_account()`, `restore_admin_account()`, `finalize_migration()`
+- JavaScript: Added `finalizeMigration()` call after database phase completes
+
+---
+
 ## [1.0.23] - 2025-01-31
 ### Fixed
 - **Critical CORS bug** - REST_Controller was never instantiated early enough

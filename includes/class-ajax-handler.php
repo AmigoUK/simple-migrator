@@ -56,6 +56,7 @@ class AJAX_Handler {
         add_action('wp_ajax_sm_flush_permalinks', array($this, 'flush_permalinks'));
         add_action('wp_ajax_sm_create_table', array($this, 'create_table'));
         add_action('wp_ajax_sm_drop_table', array($this, 'drop_table'));
+        add_action('wp_ajax_sm_finalize_migration', array($this, 'finalize_migration'));
     }
 
     /**
@@ -255,6 +256,7 @@ class AJAX_Handler {
 
     /**
      * Prepare database for migration (drop existing tables if needed)
+     * Smart Merge Mode: Preserves wp_options (critical entries) and protected tables
      */
     public function prepare_database() {
         $verify = $this->verify_request();
@@ -282,9 +284,18 @@ class AJAX_Handler {
         global $wpdb;
 
         $dropped = array();
+        $preserved = array();
         $errors = array();
 
+        // Get protected tables list
+        $protected_tables = json_decode(SM_PROTECTED_TABLES, true);
+
         if ($overwrite) {
+            // CRITICAL: Preserve critical wp_options BEFORE any table operations
+            $this->preserve_critical_options();
+            // Preserve admin account before truncating wp_users
+            $this->preserve_admin_account();
+
             foreach ($tables as $table) {
                 // Replace source prefix with destination prefix
                 $table_name = $this->replace_table_prefix($table, $source_prefix, $wpdb->prefix);
@@ -299,13 +310,29 @@ class AJAX_Handler {
                 $table_exists = $wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $table_name));
 
                 if ($table_exists) {
-                    // Drop table - table name is validated above
-                    $result = $wpdb->query("DROP TABLE `{$table_name}`");
+                    // Check if this is a protected table (users, usermeta)
+                    $table_base = str_replace($wpdb->prefix, '', $table_name);
+                    $is_protected = in_array($table_base, $protected_tables, true);
 
-                    if ($result !== false) {
-                        $dropped[] = $table_name;
+                    if ($is_protected) {
+                        // For protected tables, truncate instead of drop
+                        // This preserves the table structure
+                        $result = $wpdb->query("TRUNCATE TABLE `{$table_name}`");
+
+                        if ($result !== false) {
+                            $preserved[] = $table_name;
+                        } else {
+                            $errors[] = "Failed to truncate table: {$table_name}";
+                        }
                     } else {
-                        $errors[] = "Failed to drop table: {$table_name}";
+                        // For non-protected tables, drop as before
+                        $result = $wpdb->query("DROP TABLE `{$table_name}`");
+
+                        if ($result !== false) {
+                            $dropped[] = $table_name;
+                        } else {
+                            $errors[] = "Failed to drop table: {$table_name}";
+                        }
                     }
                 }
             }
@@ -313,8 +340,163 @@ class AJAX_Handler {
 
         wp_send_json_success(array(
             'dropped' => $dropped,
+            'preserved' => $preserved,
             'errors' => $errors,
         ));
+    }
+
+    /**
+     * Preserve critical wp_options entries before migration
+     * Stores them in a transient for restoration after migration
+     */
+    private function preserve_critical_options() {
+        global $wpdb;
+
+        $protected_options = json_decode(SM_PROTECTED_OPTIONS, true);
+        $preserved = array();
+
+        foreach ($protected_options as $option) {
+            $value = $wpdb->get_var($wpdb->prepare(
+                "SELECT option_value FROM {$wpdb->options} WHERE option_name = %s",
+                $option
+            ));
+            if ($value !== null) {
+                $preserved[$option] = $value;
+            }
+        }
+
+        // Store in transient for restoration after migration
+        set_transient('sm_preserved_options', $preserved, HOUR_IN_SECONDS);
+    }
+
+    /**
+     * Preserve admin account before truncating wp_users
+     * Stores admin credentials for restoration after migration
+     */
+    private function preserve_admin_account() {
+        $admin = get_users(array(
+            'role'    => 'administrator',
+            'number'  => 1,
+            'orderby' => 'ID',
+            'order'   => 'ASC'
+        ));
+
+        if (!empty($admin)) {
+            $admin_user = $admin[0];
+            $preserved_admin = array(
+                'user_login'    => $admin_user->user_login,
+                'user_pass'     => $admin_user->user_pass, // Hashed password
+                'user_email'    => $admin_user->user_email,
+                'user_url'      => $admin_user->user_url,
+                'user_nicename' => $admin_user->user_nicename,
+                'display_name'  => $admin_user->display_name,
+            );
+
+            set_transient('sm_preserved_admin', $preserved_admin, HOUR_IN_SECONDS);
+        }
+    }
+
+    /**
+     * Finalize migration - restore preserved options and admin
+     * Called after database phase to restore destination site settings
+     */
+    public function finalize_migration() {
+        $verify = $this->verify_request();
+        if (is_wp_error($verify)) {
+            wp_send_json_error($verify->get_error_message());
+        }
+
+        global $wpdb;
+
+        // Restore preserved options
+        $preserved_options = get_transient('sm_preserved_options');
+
+        if ($preserved_options && is_array($preserved_options)) {
+            foreach ($preserved_options as $option_name => $option_value) {
+                // Check if option exists
+                $exists = $wpdb->get_var($wpdb->prepare(
+                    "SELECT option_id FROM {$wpdb->options} WHERE option_name = %s",
+                    $option_name
+                ));
+
+                if ($exists) {
+                    // Update existing option
+                    $wpdb->update(
+                        $wpdb->options,
+                        array('option_value' => $option_value),
+                        array('option_name' => $option_name),
+                        array('%s'),
+                        array('%s')
+                    );
+                } else {
+                    // Insert new option (in case it was dropped)
+                    $wpdb->insert(
+                        $wpdb->options,
+                        array(
+                            'option_name' => $option_name,
+                            'option_value' => $option_value,
+                            'autoload' => 'yes',
+                        ),
+                        array('%s', '%s', '%s')
+                    );
+                }
+            }
+
+            delete_transient('sm_preserved_options');
+        }
+
+        // Restore preserved admin account
+        $this->restore_admin_account();
+
+        // Flush caches to ensure changes take effect
+        wp_cache_flush();
+
+        wp_send_json_success(array(
+            'message' => __('Migration finalized. Preserved settings restored.', 'simple-migrator')
+        ));
+    }
+
+    /**
+     * Restore preserved admin account after migration
+     */
+    private function restore_admin_account() {
+        $preserved_admin = get_transient('sm_preserved_admin');
+
+        if ($preserved_admin && is_array($preserved_admin)) {
+            global $wpdb;
+
+            // Check if admin still exists
+            $exists = $wpdb->get_var($wpdb->prepare(
+                "SELECT ID FROM {$wpdb->users} WHERE user_login = %s",
+                $preserved_admin['user_login']
+            ));
+
+            if (!$exists) {
+                // Re-insert admin with preserved password hash
+                $wpdb->insert(
+                    $wpdb->users,
+                    array(
+                        'user_login'    => $preserved_admin['user_login'],
+                        'user_pass'     => $preserved_admin['user_pass'],
+                        'user_email'    => $preserved_admin['user_email'],
+                        'user_url'      => $preserved_admin['user_url'],
+                        'user_nicename' => $preserved_admin['user_nicename'],
+                        'display_name'  => $preserved_admin['display_name'],
+                        'user_registered' => current_time('mysql'),
+                        'user_activation_key' => '',
+                    )
+                );
+
+                $user_id = $wpdb->insert_id;
+
+                // Add admin capabilities and meta
+                $capabilities = array('administrator' => 1);
+                update_user_meta($user_id, $wpdb->prefix . 'capabilities', $capabilities);
+                update_user_meta($user_id, $wpdb->prefix . 'user_level', 10);
+            }
+
+            delete_transient('sm_preserved_admin');
+        }
     }
 
     /**

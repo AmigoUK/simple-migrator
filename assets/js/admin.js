@@ -754,6 +754,10 @@ const Orchestrator = {
 
             if (!MigrationState.isCancelled) {
                 UI.updateProgress('database', 100, 'Database transfer complete');
+
+                // Restore preserved settings (admin, options) after database phase
+                UI.updateStatus('database', 'Restoring preserved settings...');
+                await this.finalizeMigration();
             }
         } catch (error) {
             throw new Error(`Database phase failed: ${error.message}`);
@@ -1011,6 +1015,23 @@ const Orchestrator = {
 
         if (!response.success) {
             throw new Error(response.data || 'Failed to perform search & replace');
+        }
+
+        return response;
+    },
+
+    /**
+     * Finalize migration - restore preserved settings
+     * Called after database phase to restore destination admin and options
+     */
+    async finalizeMigration() {
+        const response = await jQuery.post(smData.ajaxUrl, {
+            action: 'sm_finalize_migration',
+            nonce: smData.nonce
+        });
+
+        if (!response.success) {
+            console.warn('Failed to finalize migration:', response.data);
         }
 
         return response;
