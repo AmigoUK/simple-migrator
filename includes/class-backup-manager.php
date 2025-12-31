@@ -83,7 +83,7 @@ class Backup_Manager {
 
         // Create backup directory
         if (!wp_mkdir_p($backup_path)) {
-            return new WP_Error('mkdir_failed', __('Failed to create backup directory.', 'simple-migrator'));
+            return new \WP_Error('mkdir_failed', __('Failed to create backup directory.', 'simple-migrator'));
         }
 
         if ($progress_callback) {
@@ -178,7 +178,7 @@ class Backup_Manager {
                 return $this->backup_database_php($backup_path);
             }
         } catch (Exception $e) {
-            return new WP_Error('db_backup_failed', $e->getMessage());
+            return new \WP_Error('db_backup_failed', $e->getMessage());
         }
     }
 
@@ -195,7 +195,7 @@ class Backup_Manager {
             $db_file = fopen($backup_path . 'database.sql', 'w');
 
             if (!$db_file) {
-                return new WP_Error('file_open_failed', __('Failed to create database backup file.', 'simple-migrator'));
+                return new \WP_Error('file_open_failed', __('Failed to create database backup file.', 'simple-migrator'));
             }
 
             // Get all tables
@@ -239,7 +239,7 @@ class Backup_Manager {
             return true;
 
         } catch (Exception $e) {
-            return new WP_Error('php_db_backup_failed', $e->getMessage());
+            return new \WP_Error('php_db_backup_failed', $e->getMessage());
         }
     }
 
@@ -284,27 +284,27 @@ class Backup_Manager {
         $zip_file = $backup_path . 'files.zip';
 
         if (!class_exists('ZipArchive')) {
-            return new WP_Error('zip_missing', __('ZipArchive class not available.', 'simple-migrator'));
+            return new \WP_Error('zip_missing', __('ZipArchive class not available.', 'simple-migrator'));
         }
 
         try {
             $zip = new \ZipArchive();
 
             if ($zip->open($zip_file, \ZipArchive::CREATE | \ZipArchive::OVERWRITE) !== true) {
-                return new WP_Error('zip_create_failed', __('Failed to create zip file.', 'simple-migrator'));
+                return new \WP_Error('zip_create_failed', __('Failed to create zip file.', 'simple-migrator'));
             }
 
             // Add files to archive
             $this->add_files_to_zip($zip, $content_dir, strlen($content_dir) + 1);
 
             if ($zip->close() === false) {
-                return new WP_Error('zip_close_failed', __('Failed to close zip file.', 'simple-migrator'));
+                return new \WP_Error('zip_close_failed', __('Failed to close zip file.', 'simple-migrator'));
             }
 
             return true;
 
         } catch (Exception $e) {
-            return new WP_Error('file_backup_failed', $e->getMessage());
+            return new \WP_Error('file_backup_failed', $e->getMessage());
         }
     }
 
@@ -344,7 +344,7 @@ class Backup_Manager {
         $backup_path = $this->backup_dir . $backup_id . '/';
 
         if (!file_exists($backup_path . 'backup.json')) {
-            return new WP_Error('backup_not_found', __('Backup not found.', 'simple-migrator'));
+            return new \WP_Error('backup_not_found', __('Backup not found.', 'simple-migrator'));
         }
 
         $metadata = json_decode(file_get_contents($backup_path . 'backup.json'), true);
@@ -388,7 +388,7 @@ class Backup_Manager {
         $sql_file = $backup_path . 'database.sql';
 
         if (!file_exists($sql_file)) {
-            return new WP_Error('db_backup_missing', __('Database backup file not found.', 'simple-migrator'));
+            return new \WP_Error('db_backup_missing', __('Database backup file not found.', 'simple-migrator'));
         }
 
         try {
@@ -417,7 +417,7 @@ class Backup_Manager {
             return true;
 
         } catch (Exception $e) {
-            return new WP_Error('db_restore_failed', $e->getMessage());
+            return new \WP_Error('db_restore_failed', $e->getMessage());
         }
     }
 
@@ -477,31 +477,31 @@ class Backup_Manager {
         $zip_file = $backup_path . 'files.zip';
 
         if (!file_exists($zip_file)) {
-            return new WP_Error('files_backup_missing', __('Files backup file not found.', 'simple-migrator'));
+            return new \WP_Error('files_backup_missing', __('Files backup file not found.', 'simple-migrator'));
         }
 
         if (!class_exists('ZipArchive')) {
-            return new WP_Error('zip_missing', __('ZipArchive class not available.', 'simple-migrator'));
+            return new \WP_Error('zip_missing', __('ZipArchive class not available.', 'simple-migrator'));
         }
 
         try {
             $zip = new \ZipArchive();
 
             if ($zip->open($zip_file) !== true) {
-                return new WP_Error('zip_open_failed', __('Failed to open zip file.', 'simple-migrator'));
+                return new \WP_Error('zip_open_failed', __('Failed to open zip file.', 'simple-migrator'));
             }
 
             // Extract files
             if ($zip->extractTo($content_dir) === false) {
                 $zip->close();
-                return new WP_Error('zip_extract_failed', __('Failed to extract files.', 'simple-migrator'));
+                return new \WP_Error('zip_extract_failed', __('Failed to extract files.', 'simple-migrator'));
             }
 
             $zip->close();
             return true;
 
         } catch (Exception $e) {
-            return new WP_Error('file_restore_failed', $e->getMessage());
+            return new \WP_Error('file_restore_failed', $e->getMessage());
         }
     }
 
@@ -549,7 +549,7 @@ class Backup_Manager {
         $backup_path = $this->backup_dir . $backup_id . '/';
 
         if (!file_exists($backup_path)) {
-            return new WP_Error('backup_not_found', __('Backup not found.', 'simple-migrator'));
+            return new \WP_Error('backup_not_found', __('Backup not found.', 'simple-migrator'));
         }
 
         // Recursively delete backup directory
@@ -685,11 +685,11 @@ class Backup_Manager {
      */
     private function verify_request() {
         if (!current_user_can('manage_options')) {
-            return new WP_Error('permission_denied', __('You do not have permission to perform this action.', 'simple-migrator'));
+            return new \WP_Error('permission_denied', __('You do not have permission to perform this action.', 'simple-migrator'));
         }
 
         if (!isset($_POST['nonce']) || !wp_verify_nonce($_POST['nonce'], 'sm_nonce')) {
-            return new WP_Error('invalid_nonce', __('Invalid security token.', 'simple-migrator'));
+            return new \WP_Error('invalid_nonce', __('Invalid security token.', 'simple-migrator'));
         }
 
         return true;
