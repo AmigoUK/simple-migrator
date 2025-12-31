@@ -642,6 +642,9 @@ class Backup_Manager {
      * AJAX: Create backup with progress tracking
      */
     public function ajax_create_backup() {
+        // Log to WordPress debug log
+        error_log('SM: ajax_create_backup() started');
+
         // Disable ALL output buffering to enable streaming
         while (ob_get_level() > 0) {
             ob_end_clean();
@@ -653,17 +656,24 @@ class Backup_Manager {
 
         $verify = $this->verify_request();
         if (is_wp_error($verify)) {
+            error_log('SM: Verification failed: ' . $verify->get_error_message());
             echo json_encode(array('type' => 'error', 'error' => $verify->get_error_message()));
             flush();
             exit;
         }
 
+        error_log('SM: Verification passed, starting backup');
+
         // Start time for calculation
         $start_time = microtime(true);
 
         try {
+            error_log('SM: About to call create_backup()');
+
             // Send progress updates during backup
             $result = $this->create_backup(function($progress, $message) use ($start_time) {
+                error_log("SM: Progress: {$progress}% - {$message}");
+
                 // Calculate elapsed time
                 $elapsed = microtime(true) - $start_time;
 
@@ -683,7 +693,10 @@ class Backup_Manager {
                 flush();
             });
 
+            error_log('SM: Backup completed, result: ' . print_r($result, true));
+
             if (is_wp_error($result)) {
+                error_log('SM: Backup error: ' . $result->get_error_message());
                 echo json_encode(array('type' => 'error', 'error' => $result->get_error_message()));
                 flush();
                 exit;
@@ -700,10 +713,16 @@ class Backup_Manager {
             ));
             flush();
         } catch (Exception $e) {
+            error_log('SM: Exception caught: ' . $e->getMessage());
+            echo json_encode(array('type' => 'error', 'error' => $e->getMessage()));
+            flush();
+        } catch (Error $e) {
+            error_log('SM: Fatal error caught: ' . $e->getMessage());
             echo json_encode(array('type' => 'error', 'error' => $e->getMessage()));
             flush();
         }
 
+        error_log('SM: ajax_create_backup() finished');
         exit;
     }
 
