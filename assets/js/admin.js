@@ -1579,6 +1579,7 @@ const UI = {
             const decoder = new TextDecoder();
             let buffer = '';
             let finalResult = null;
+            let hasError = false;
 
             while (true) {
                 const { done, value } = await reader.read();
@@ -1596,8 +1597,8 @@ const UI = {
                         try {
                             const data = JSON.parse(line);
 
-                            // Check if this is a progress update or final result
-                            if (data.progress !== undefined) {
+                            // Check the type field to determine how to handle
+                            if (data.type === 'progress') {
                                 // Progress update
                                 $fill.css('width', data.progress + '%');
 
@@ -1609,15 +1610,23 @@ const UI = {
                                     ${data.message}<br>
                                     <small>Time: ${elapsed} elapsed, ~${remaining} remaining</small>
                                 `);
-                            } else if (data.success) {
+                            } else if (data.type === 'complete') {
                                 // Final result
-                                finalResult = data;
-                            } else if (data.data) {
-                                // WordPress AJAX success format
                                 finalResult = data.data;
+                            } else if (data.type === 'error') {
+                                // Error occurred
+                                hasError = true;
+                                throw new Error(data.error || 'Unknown error');
+                            } else if (data.error) {
+                                // Legacy error format
+                                hasError = true;
+                                throw new Error(data.error);
                             }
                         } catch (e) {
-                            console.warn('Failed to parse backup progress:', line, e);
+                            // Only log parsing errors, not re-thrown errors
+                            if (!hasError) {
+                                console.warn('Failed to parse backup progress:', line, e);
+                            }
                         }
                     }
                 }
@@ -1640,7 +1649,7 @@ const UI = {
                     $fill.css('width', '0%');
                     UI.loadBackups();
                 }, 2000);
-            } else {
+            } else if (!hasError) {
                 throw new Error('No response from server');
             }
         } catch (error) {
