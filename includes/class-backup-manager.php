@@ -642,56 +642,68 @@ class Backup_Manager {
      * AJAX: Create backup with progress tracking
      */
     public function ajax_create_backup() {
-        // Disable PHP output buffering to enable streaming
-        if (ob_get_level()) {
+        // Disable ALL output buffering to enable streaming
+        while (ob_get_level() > 0) {
             ob_end_clean();
         }
 
+        // Set headers to prevent buffering
+        header('Content-Type: application/json');
+        header('X-Accel-Buffering: no'); // Nginx
+
         $verify = $this->verify_request();
         if (is_wp_error($verify)) {
-            echo json_encode(array('error' => $verify->get_error_message()));
+            echo json_encode(array('type' => 'error', 'error' => $verify->get_error_message()));
+            flush();
             exit;
         }
 
         // Start time for calculation
         $start_time = microtime(true);
 
-        // Send progress updates during backup
-        $result = $this->create_backup(function($progress, $message) use ($start_time) {
-            // Calculate elapsed time
-            $elapsed = microtime(true) - $start_time;
+        try {
+            // Send progress updates during backup
+            $result = $this->create_backup(function($progress, $message) use ($start_time) {
+                // Calculate elapsed time
+                $elapsed = microtime(true) - $start_time;
 
-            // Estimate remaining time (rough calculation)
-            $estimated_total = $progress > 0 ? $elapsed / ($progress / 100) : 0;
-            $remaining = max(0, $estimated_total - $elapsed);
+                // Estimate remaining time (rough calculation)
+                $estimated_total = $progress > 0 ? $elapsed / ($progress / 100) : 0;
+                $remaining = max(0, $estimated_total - $elapsed);
 
-            // Send progress update
+                // Send progress update
+                echo json_encode(array(
+                    'type' => 'progress',
+                    'progress' => $progress,
+                    'message' => $message,
+                    'elapsed' => round($elapsed, 1),
+                    'remaining' => round($remaining, 1)
+                ));
+                echo "\n";
+                flush();
+            });
+
+            if (is_wp_error($result)) {
+                echo json_encode(array('type' => 'error', 'error' => $result->get_error_message()));
+                flush();
+                exit;
+            }
+
+            // Add total time to result
+            $result['total_time'] = round(microtime(true) - $start_time, 1);
+
+            // Send final result in the same format (not wrapped by WordPress)
             echo json_encode(array(
-                'type' => 'progress',
-                'progress' => $progress,
-                'message' => $message,
-                'elapsed' => round($elapsed, 1),
-                'remaining' => round($remaining, 1)
+                'type' => 'complete',
+                'success' => true,
+                'data' => $result
             ));
-            echo "\n";
-            ob_flush();
             flush();
-        });
-
-        if (is_wp_error($result)) {
-            echo json_encode(array('type' => 'error', 'error' => $result->get_error_message()));
-            exit;
+        } catch (Exception $e) {
+            echo json_encode(array('type' => 'error', 'error' => $e->getMessage()));
+            flush();
         }
 
-        // Add total time to result
-        $result['total_time'] = round(microtime(true) - $start_time, 1);
-
-        // Send final result in the same format (not wrapped by WordPress)
-        echo json_encode(array(
-            'type' => 'complete',
-            'success' => true,
-            'data' => $result
-        ));
         exit;
     }
 

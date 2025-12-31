@@ -1557,6 +1557,7 @@ const UI = {
 
         try {
             const startTime = Date.now();
+            const debugLog = []; // Debug logging
 
             // Use fetch for streaming response
             const response = await fetch(smData.ajaxUrl, {
@@ -1580,11 +1581,16 @@ const UI = {
             let buffer = '';
             let finalResult = null;
             let hasError = false;
+            let lineCount = 0;
 
             while (true) {
                 const { done, value } = await reader.read();
 
-                if (done) break;
+                if (done) {
+                    console.log('Stream complete. Total lines received:', lineCount);
+                    console.log('Final buffer state:', buffer);
+                    break;
+                }
 
                 buffer += decoder.decode(value, { stream: true });
 
@@ -1594,6 +1600,9 @@ const UI = {
 
                 for (const line of lines) {
                     if (line.trim()) {
+                        lineCount++;
+                        debugLog.push(line);
+
                         try {
                             const data = JSON.parse(line);
 
@@ -1613,6 +1622,7 @@ const UI = {
                             } else if (data.type === 'complete') {
                                 // Final result
                                 finalResult = data.data;
+                                console.log('Received complete message:', finalResult);
                             } else if (data.type === 'error') {
                                 // Error occurred
                                 hasError = true;
@@ -1632,6 +1642,15 @@ const UI = {
                 }
             }
 
+            // Debug logging
+            console.log('Backup creation debug:', {
+                totalLines: lineCount,
+                hasFinalResult: !!finalResult,
+                hasError: hasError,
+                finalBuffer: buffer,
+                allLines: debugLog
+            });
+
             if (finalResult) {
                 $fill.css('width', '100%');
 
@@ -1650,13 +1669,14 @@ const UI = {
                     UI.loadBackups();
                 }, 2000);
             } else if (!hasError) {
-                throw new Error('No response from server');
+                throw new Error('No response from server. Check browser console (F12) for debug info.');
             }
         } catch (error) {
             console.error('Backup error:', error);
             $status.html(`
                 <strong style="color: #d63638;">✗ Backup failed!</strong><br>
-                <small>Error: ${error.message}</small>
+                <small>Error: ${error.message}</small><br>
+                <small>Check browser console (F12) for details</small>
             `);
         } finally {
             $createBtn.prop('disabled', false);
