@@ -1293,7 +1293,8 @@ const UI = {
             nonce: smData.nonce
         }, function(response) {
             if (response.success) {
-                jQuery('#sm-migration-key').text(response.key);
+                // Reload page to show new key
+                location.reload();
             }
         });
     }
