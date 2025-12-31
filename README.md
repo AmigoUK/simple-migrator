@@ -153,13 +153,7 @@ simple-migrator/
 
 ## Changelog
 
-### 1.0.0
-- Initial release
-- Bit-by-bit file and database transfer
-- Resume capability
-- Retry logic with exponential backoff
-- Table prefix translation
-- Serialization-safe search & replace
+See [CHANGELOG.md](CHANGELOG.md) for a complete version history and detailed changes.
 
 ## Contributing
 
