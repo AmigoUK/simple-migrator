@@ -256,7 +256,7 @@ class AJAX_Handler {
 
     /**
      * Prepare database for migration (drop existing tables if needed)
-     * Smart Merge Mode: Preserves wp_options (critical entries) and protected tables
+     * Smart Merge Mode: Preserves current user during migration
      */
     public function prepare_database() {
         $verify = $this->verify_request();
@@ -287,13 +287,14 @@ class AJAX_Handler {
         $preserved = array();
         $errors = array();
 
-        // Get protected tables list
-        $protected_tables = json_decode(SM_PROTECTED_TABLES, true);
+        // Get current user ID - we MUST preserve this user to keep the session alive
+        $current_user_id = get_current_user_id();
+        $current_user_login = $current_user_id ? wp_get_current_user()->user_login : null;
 
         if ($overwrite) {
             // CRITICAL: Preserve critical wp_options BEFORE any table operations
             $this->preserve_critical_options();
-            // Preserve admin account before truncating wp_users
+            // Preserve admin account for final restoration
             $this->preserve_admin_account();
 
             foreach ($tables as $table) {
@@ -310,22 +311,49 @@ class AJAX_Handler {
                 $table_exists = $wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $table_name));
 
                 if ($table_exists) {
-                    // Check if this is a protected table (users, usermeta)
                     $table_base = str_replace($wpdb->prefix, '', $table_name);
-                    $is_protected = in_array($table_base, $protected_tables, true);
 
-                    if ($is_protected) {
-                        // For protected tables, truncate instead of drop
-                        // This preserves the table structure
-                        $result = $wpdb->query("TRUNCATE TABLE `{$table_name}`");
-
-                        if ($result !== false) {
-                            $preserved[] = $table_name;
+                    // Handle wp_users specially - delete all EXCEPT current user
+                    if ($table_base === 'users') {
+                        if ($current_user_id && $current_user_login) {
+                            // Delete all users except current one
+                            $deleted = $wpdb->query($wpdb->prepare(
+                                "DELETE FROM `{$table_name}` WHERE ID != %d",
+                                $current_user_id
+                            ));
+                            if ($deleted !== false) {
+                                $preserved[] = $table_name . ' (current user preserved)';
+                            }
                         } else {
-                            $errors[] = "Failed to truncate table: {$table_name}";
+                            // No current user, truncate entirely
+                            $wpdb->query("TRUNCATE TABLE `{$table_name}`");
+                            $preserved[] = $table_name . ' (truncated)';
                         }
-                    } else {
-                        // For non-protected tables, drop as before
+                    }
+                    // Handle wp_usermeta specially - delete all EXCEPT current user's meta
+                    elseif ($table_base === 'usermeta') {
+                        if ($current_user_id) {
+                            // Delete all usermeta except for current user
+                            $deleted = $wpdb->query($wpdb->prepare(
+                                "DELETE FROM `{$table_name}` WHERE user_id != %d",
+                                $current_user_id
+                            ));
+                            if ($deleted !== false) {
+                                $preserved[] = $table_name . ' (current user meta preserved)';
+                            }
+                        } else {
+                            // No current user, truncate entirely
+                            $wpdb->query("TRUNCATE TABLE `{$table_name}`");
+                            $preserved[] = $table_name . ' (truncated)';
+                        }
+                    }
+                    // Skip wp_options entirely - it will be overwritten during migration
+                    // Then we'll restore specific protected options at the end
+                    elseif ($table_base === 'options') {
+                        $preserved[] = $table_name . ' (will be migrated, then fixed)';
+                    }
+                    // All other tables - drop as normal
+                    else {
                         $result = $wpdb->query("DROP TABLE `{$table_name}`");
 
                         if ($result !== false) {
@@ -341,6 +369,7 @@ class AJAX_Handler {
         wp_send_json_success(array(
             'dropped' => $dropped,
             'preserved' => $preserved,
+            'current_user_preserved' => $current_user_id,
             'errors' => $errors,
         ));
     }

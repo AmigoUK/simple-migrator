@@ -2,6 +2,27 @@
 
 All notable changes to Simple Migrator will be documented in this file.
 
+## [1.0.25] - 2025-01-31
+### Fixed - Session Loss During Migration
+- **Critical fix:** WordPress session no longer breaks during migration
+- **wp_users handling:** Delete all users EXCEPT current user (keeps session alive)
+- **wp_usermeta handling:** Delete all usermeta EXCEPT current user's
+- **wp_options handling:** Skip entirely - let it be migrated normally, then fix protected options
+- Previous approach was truncating protected tables which destroyed the current user mid-session
+- New approach preserves the logged-in user throughout the migration process
+
+### Technical Details
+- `prepare_database()` now:
+  - Gets current user ID before any operations
+  - For wp_users: `DELETE FROM wp_users WHERE ID != current_user_id`
+  - For wp_usermeta: `DELETE FROM wp_usermeta WHERE user_id != current_user_id`
+  - For wp_options: Skip (don't drop or truncate)
+  - All other tables: Drop as normal
+- `finalize_migration()` restores protected options after migration completes
+- Current user remains authenticated throughout entire migration
+
+---
+
 ## [1.0.24] - 2025-01-31
 ### Fixed - Smart Merge Mode
 - **Critical fix:** WordPress no longer goes into install mode during migration

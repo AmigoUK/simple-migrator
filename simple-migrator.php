@@ -3,7 +3,7 @@
  * Plugin Name: Simple Migrator
  * Plugin URI: https://github.com/AmigoUK/simple-migrator
  * Description: Distributed, peer-to-peer WordPress migration plugin for reliable 1:1 site cloning with bit-by-bit transfer technology.
- * Version: 1.0.24
+ * Version: 1.0.25
  * Author: Tomasz 'Amigo' Lewandowski
  * Author URI: https://www.attv.uk
  * License: GPL v2 or later
@@ -27,7 +27,7 @@ if (!defined('ABSPATH')) {
 define('SM_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('SM_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('SM_PLUGIN_BASENAME', plugin_basename(__FILE__));
-define('SM_VERSION', '1.0.24');
+define('SM_VERSION', '1.0.25');
 define('SM_API_NAMESPACE', 'simple-migrator/v1');
 define('SM_CHUNK_SIZE', 2 * 1024 * 1024); // 2MB chunks
 
