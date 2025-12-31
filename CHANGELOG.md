@@ -2,6 +2,27 @@
 
 All notable changes to Simple Migrator will be documented in this file.
 
+## [1.0.18] - 2025-01-31
+### Fixed
+- **Improved output buffering handling** - now clears ALL buffer levels
+- Added `Content-Type` and `X-Accel-Buffering: no` headers
+- Wrapped backup creation in try-catch for better error handling
+
+### Added
+- **Comprehensive debug logging** to JavaScript console
+- Line count tracking to see how many JSON lines are received
+- All received lines are logged for debugging
+- Better error messages directing users to check console (F12)
+
+### Debugging
+- When backup fails, check browser console (F12) for:
+  - Total lines received
+  - Final buffer state
+  - All parsed JSON lines
+  - Error details
+
+---
+
 ## [1.0.17] - 2025-01-31
 ### Fixed
 - **"No response from server" error** in backup creation
