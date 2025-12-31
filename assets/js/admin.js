@@ -1587,8 +1587,24 @@ const UI = {
                 const { done, value } = await reader.read();
 
                 if (done) {
+                    // Process any remaining content in buffer (last line without newline)
+                    if (buffer.trim()) {
+                        lineCount++;
+                        debugLog.push(buffer);
+                        try {
+                            const data = JSON.parse(buffer);
+                            if (data.type === 'complete') {
+                                finalResult = data.data;
+                                console.log('Received complete message from buffer:', finalResult);
+                            } else if (data.type === 'error') {
+                                hasError = true;
+                                throw new Error(data.error || 'Unknown error');
+                            }
+                        } catch (e) {
+                            console.warn('Failed to parse final buffer:', buffer, e);
+                        }
+                    }
                     console.log('Stream complete. Total lines received:', lineCount);
-                    console.log('Final buffer state:', buffer);
                     break;
                 }
 
