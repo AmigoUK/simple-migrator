@@ -2,6 +2,23 @@
 
 All notable changes to Simple Migrator will be documented in this file.
 
+## [1.0.17] - 2025-01-31
+### Fixed
+- **"No response from server" error** in backup creation
+- Changed from `wp_send_json_success()` to manual JSON encoding for streaming
+- WordPress AJAX wrapper was incompatible with streaming format
+- Division by zero in time estimation when progress is 0%
+
+### Changed
+- All backup responses now include `type` field:
+  - `type: "progress"` - Progress updates during backup
+  - `type: "complete"` - Final successful result
+  - `type: "error"` - Error messages
+- Disabled PHP output buffering at start of AJAX handler
+- Improved error detection with `hasError` flag in JavaScript
+
+---
+
 ## [1.0.16] - 2025-01-31
 ### Fixed
 - **Critical nonce mismatch bug** in Backup_Manager (was checking 'sm_nonce' instead of 'wp_rest')
