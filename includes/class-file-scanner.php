@@ -37,9 +37,9 @@ class File_Scanner {
      */
     private $exclude_dirs = array(
         'cache',
-        'backups',
+        'sm-backups',
         'upgrade',
-        'uploads/cache',  // Cache files in uploads
+        'simple-migrator',  // Prevent overwriting destination plugin
     );
 
     /**
@@ -109,6 +109,11 @@ class File_Scanner {
 
             foreach ($iterator as $file) {
                 if (!$file->isFile()) {
+                    continue;
+                }
+
+                // Skip symlinks to prevent following links outside wp-content
+                if ($file->isLink()) {
                     continue;
                 }
 

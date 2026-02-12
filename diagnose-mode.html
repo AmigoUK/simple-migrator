@@ -1,94 +1,67 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+    <meta charset="utf-8">
     <title>Simple Migrator Mode Diagnostic</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; max-width: 800px; margin: 40px auto; padding: 0 20px; }
+        h1 { color: #1d2327; }
+        code { background: #f0f0f1; padding: 2px 6px; border-radius: 3px; font-size: 13px; }
+        pre { background: #f0f0f1; padding: 15px; border-radius: 4px; overflow-x: auto; }
+        .instructions { background: #fff; border: 1px solid #c3c4c7; border-radius: 4px; padding: 20px; margin: 20px 0; }
+        .warning { color: #d63638; font-weight: 600; }
+    </style>
 </head>
 <body>
-<h1>Simple Migrator Mode Diagnostic</h1>
-<p>Check the browser console (F12) for diagnostic information.</p>
+    <h1>Simple Migrator Mode Diagnostic</h1>
 
-<script>
-// This script should be pasted into the browser console on the Simple Migrator admin page
+    <div class="instructions">
+        <h2>How to Use</h2>
+        <p>Open the Simple Migrator admin page in WordPress, then open the browser console (F12) and paste the following code:</p>
 
+        <pre>
+// === Simple Migrator Diagnostic ===
 console.log('=== Simple Migrator Diagnostic ===');
-
-// Check if jQuery is loaded
-if (typeof jQuery === 'undefined') {
-    console.error('❌ jQuery is NOT loaded');
-} else {
-    console.log('✅ jQuery is loaded, version:', jQuery.fn.jquery);
-}
 
 // Check if smData is defined
 if (typeof smData === 'undefined') {
-    console.error('❌ smData is NOT defined');
+    console.error('smData is NOT defined - plugin JS not loaded');
 } else {
-    console.log('✅ smData is defined:', smData);
+    console.log('smData defined:', JSON.stringify({
+        apiUrl: smData.apiUrl,
+        ajaxUrl: smData.ajaxUrl,
+        homeUrl: smData.homeUrl
+    }, null, 2));
 }
 
-// Check if UI object exists
-if (typeof UI === 'undefined') {
-    console.error('❌ UI object is NOT defined');
-} else {
-    console.log('✅ UI object is defined');
-    console.log('  - UI.init:', typeof UI.init);
-    console.log('  - UI.setMode:', typeof UI.setMode);
-    console.log('  - UI.showCurrentMode:', typeof UI.showCurrentMode);
-}
+// Check UI object
+console.log('UI object:', typeof UI !== 'undefined' ? 'loaded' : 'NOT loaded');
 
-// Check if mode buttons exist
-const modeButtons = jQuery('.sm-mode-buttons button');
-console.log('Mode buttons found:', modeButtons.length);
-if (modeButtons.length > 0) {
-    modeButtons.each(function() {
-        console.log('  - Button:', jQuery(this).text().trim(), 'data-mode:', jQuery(this).data('mode'));
-    });
-} else {
-    console.error('❌ No mode buttons found!');
-}
+// Check mode
+var modeInput = document.getElementById('sm-current-mode');
+console.log('Current mode:', modeInput ? modeInput.value : 'NOT FOUND');
 
-// Check current mode value
-const currentMode = jQuery('#sm-current-mode');
-if (currentMode.length) {
-    console.log('✅ Current mode input found, value:', currentMode.val());
-} else {
-    console.error('❌ Current mode input NOT found');
-}
+// Check panels
+['sm-source-panel', 'sm-destination-panel', 'sm-no-mode-panel'].forEach(function(id) {
+    var el = document.getElementById(id);
+    console.log(id + ':', el ? (el.style.display === 'none' ? 'hidden' : 'visible') : 'NOT FOUND');
+});
 
-// Check if panels exist
-console.log('Panels:');
-console.log('  - #sm-source-panel:', jQuery('#sm-source-panel').length ? '✅' : '❌');
-console.log('  - #sm-destination-panel:', jQuery('#sm-destination-panel').length ? '✅' : '❌');
-console.log('  - #sm-no-mode-panel:', jQuery('#sm-no-mode-panel').length ? '✅' : '❌');
+console.log('=== Diagnostic Complete ===');
+        </pre>
+    </div>
 
-// Check mode selector visibility
-const modeSelector = jQuery('.sm-mode-selector');
-console.log('Mode selector visible:', modeSelector.length ? (modeSelector.is(':visible') ? '✅ YES' : '❌ NO (hidden)') : '❌ NOT FOUND');
+    <div class="instructions">
+        <h2>Manual Testing Commands</h2>
+        <p>Try these commands in the browser console on the admin page:</p>
+        <ul>
+            <li><code>jQuery('.sm-mode-buttons button').first().click()</code> - Click first mode button</li>
+            <li><code>UI.setMode('source')</code> - Set source mode</li>
+            <li><code>UI.showCurrentMode()</code> - Refresh mode display</li>
+            <li><code>jQuery('#sm-source-panel').show()</code> - Force show source panel</li>
+        </ul>
+    </div>
 
-// Test manual mode switch
-console.log('\n=== Testing Manual Mode Switch ===');
-try {
-    jQuery('.sm-mode-buttons button').first().trigger('click');
-    console.log('✅ Click event triggered on first mode button');
-    setTimeout(() => {
-        console.log('Current mode after click:', jQuery('#sm-current-mode').val());
-        console.log('Source panel visible:', jQuery('#sm-source-panel').is(':visible'));
-    }, 1000);
-} catch (error) {
-    console.error('❌ Error triggering click:', error);
-}
-
-console.log('\n=== Diagnostic Complete ===');
-</script>
-
-<h2>Manual Testing</h2>
-<p>Try these commands in the browser console:</p>
-<ul>
-    <li><code>jQuery('.sm-mode-buttons button').first().click()</code></li>
-    <li><code>UI.setMode('source')</code></li>
-    <li><code>UI.showCurrentMode()</code></li>
-    <li><code>jQuery('#sm-source-panel').show()</code></li>
-</ul>
-
+    <p class="warning">Note: This file is for diagnostic reference only. Do not load it directly in a browser.</p>
 </body>
 </html>

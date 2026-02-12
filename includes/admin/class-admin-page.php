@@ -82,7 +82,7 @@ class Admin_Page {
         // Localize script
         wp_localize_script('sm-admin-js', 'smData', array(
             'apiUrl'       => rest_url(SM_API_NAMESPACE),
-            'nonce'        => wp_create_nonce('wp_rest'),
+            'nonce'        => wp_create_nonce('sm_admin_nonce'),
             'pluginUrl'    => SM_PLUGIN_URL,
             'ajaxUrl'      => admin_url('admin-ajax.php'),
             'homeUrl'      => home_url(),
@@ -182,7 +182,7 @@ class Admin_Page {
                             </tr>
                             <tr>
                                 <th><?php _e('Max Upload Size', 'simple-migrator'); ?></th>
-                                <td><?php echo size_format(wp_max_upload_size()); ?></td>
+                                <td><?php echo esc_html(size_format(wp_max_upload_size())); ?></td>
                             </tr>
                         </tbody>
                     </table>
@@ -233,7 +233,7 @@ class Admin_Page {
 
                     <div class="sm-progress-section">
                         <h4><?php _e('Scan Phase', 'simple-migrator'); ?></h4>
-                        <div class="sm-progress-bar">
+                        <div class="sm-progress-bar" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">
                             <div class="sm-progress-fill" id="sm-scan-progress" style="width: 0%;"></div>
                         </div>
                         <div class="sm-progress-status" id="sm-scan-status"><?php _e('Waiting to start...', 'simple-migrator'); ?></div>
@@ -241,7 +241,7 @@ class Admin_Page {
 
                     <div class="sm-progress-section">
                         <h4><?php _e('Database Phase', 'simple-migrator'); ?></h4>
-                        <div class="sm-progress-bar">
+                        <div class="sm-progress-bar" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">
                             <div class="sm-progress-fill" id="sm-database-progress" style="width: 0%;"></div>
                         </div>
                         <div class="sm-progress-status" id="sm-database-status"><?php _e('Waiting to start...', 'simple-migrator'); ?></div>
@@ -249,7 +249,7 @@ class Admin_Page {
 
                     <div class="sm-progress-section">
                         <h4><?php _e('Files Phase', 'simple-migrator'); ?></h4>
-                        <div class="sm-progress-bar">
+                        <div class="sm-progress-bar" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">
                             <div class="sm-progress-fill" id="sm-files-progress" style="width: 0%;"></div>
                         </div>
                         <div class="sm-progress-status" id="sm-files-status"><?php _e('Waiting to start...', 'simple-migrator'); ?></div>
@@ -257,7 +257,7 @@ class Admin_Page {
 
                     <div class="sm-progress-section">
                         <h4><?php _e('Finalize Phase', 'simple-migrator'); ?></h4>
-                        <div class="sm-progress-bar">
+                        <div class="sm-progress-bar" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">
                             <div class="sm-progress-fill" id="sm-finalize-progress" style="width: 0%;"></div>
                         </div>
                         <div class="sm-progress-status" id="sm-finalize-status"><?php _e('Waiting to start...', 'simple-migrator'); ?></div>
@@ -304,7 +304,7 @@ class Admin_Page {
                     </div>
 
                     <div id="sm-backup-progress" class="sm-backup-progress" style="display: none;">
-                        <div class="sm-progress-bar">
+                        <div class="sm-progress-bar" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">
                             <div class="sm-progress-fill" id="sm-backup-progress-fill" style="width: 0%;"></div>
                         </div>
                         <div class="sm-progress-status" id="sm-backup-progress-status"><?php _e('Preparing...', 'simple-migrator'); ?></div>
@@ -337,6 +337,6 @@ class Admin_Page {
     private function get_migration_key_string() {
         $secret = get_option('sm_migration_secret', '');
         // Base64 encode the secret to avoid special characters breaking the format
-        return home_url('|') . base64_encode($secret);
+        return home_url() . '|' . base64_encode($secret);
     }
 }

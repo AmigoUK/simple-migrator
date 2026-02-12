@@ -52,15 +52,15 @@ class Backup_Manager {
         $upload_dir = wp_upload_dir();
         $this->backup_dir = $upload_dir['basedir'] . '/sm-backups/';
 
-        // Create backup directory if it doesn't exist
-        if (!file_exists($this->backup_dir)) {
-            wp_mkdir_p($this->backup_dir);
-
-            // Create .htaccess to protect backups
-            file_put_contents($this->backup_dir . '.htaccess', 'Deny from all');
-
-            // Create index.php to prevent directory listing
-            file_put_contents($this->backup_dir . 'index.php', '<?php // Silence is golden.');
+        static $dir_initialized = false;
+        if (!$dir_initialized) {
+            // Create backup directory if it doesn't exist
+            if (!file_exists($this->backup_dir)) {
+                wp_mkdir_p($this->backup_dir);
+                file_put_contents($this->backup_dir . '.htaccess', 'Deny from all');
+                file_put_contents($this->backup_dir . 'index.php', '<?php // Silence is golden.');
+            }
+            $dir_initialized = true;
         }
 
         // Register AJAX actions
@@ -78,7 +78,7 @@ class Backup_Manager {
      */
     public function create_backup($progress_callback = null) {
         $timestamp = current_time('Y-m-d-His');
-        $backup_id = 'backup-' . $timestamp;
+        $backup_id = 'backup-' . $timestamp . '-' . substr(uniqid('', true), -4);
         $backup_path = $this->backup_dir . $backup_id . '/';
 
         // Create backup directory
@@ -170,9 +170,14 @@ class Backup_Manager {
 
                 // Note: We redirect stderr to /dev/null to suppress mysqldump warnings
                 // Warnings like "Using a password on the command line..." should not be in the SQL file
+                // Validate mysqldump path
+                if (!file_exists($mysql_cmd) || !is_executable($mysql_cmd)) {
+                    return $this->backup_database_php($backup_path, $progress_callback);
+                }
+
                 $command = sprintf(
                     '%s --host=%s --user=%s --password=%s --single-transaction --quick --lock-tables=false %s > %s 2>/dev/null',
-                    \escapeshellcmd($mysql_cmd),
+                    \escapeshellarg($mysql_cmd),
                     \escapeshellarg(DB_HOST),
                     \escapeshellarg(DB_USER),
                     \escapeshellarg(DB_PASSWORD),
@@ -192,7 +197,7 @@ class Backup_Manager {
                 // Use PHP-based dump
                 return $this->backup_database_php($backup_path, $progress_callback);
             }
-        } catch (Exception $e) {
+        } catch (\Exception $e) {
             return new \WP_Error('db_backup_failed', $e->getMessage());
         }
     }
@@ -218,34 +223,57 @@ class Backup_Manager {
             $tables = $wpdb->get_col('SHOW TABLES');
 
             foreach ($tables as $table) {
+                $safe_table = str_replace('`', '``', $table);
+
                 // Write DROP TABLE statement
-                fwrite($db_file, "DROP TABLE IF EXISTS `$table`;\n");
+                fwrite($db_file, "DROP TABLE IF EXISTS `$safe_table`;\n");
 
                 // Get CREATE TABLE statement
-                $create_table = $wpdb->get_row("SHOW CREATE TABLE `$table`", ARRAY_N);
+                $create_table = $wpdb->get_row("SHOW CREATE TABLE `$safe_table`", ARRAY_N);
                 if ($create_table && isset($create_table[1])) {
                     fwrite($db_file, $create_table[1] . ";\n\n");
                 }
 
-                // Get table data
+                // Batch query to prevent memory exhaustion
+                $batch_size = 1000;
+                $offset = 0;
                 $row_count = 0;
-                $rows = $wpdb->get_results("SELECT * FROM `$table`", ARRAY_A);
 
-                foreach ($rows as $row) {
-                    $columns = array_map(function($col) use ($wpdb) {
-                        return is_null($col) ? 'NULL' : $wpdb->prepare('%s', $col);
-                    }, array_values($row));
+                while (true) {
+                    $rows = $wpdb->get_results(
+                        $wpdb->prepare("SELECT * FROM `{$safe_table}` LIMIT %d, %d", $offset, $batch_size),
+                        ARRAY_A
+                    );
 
-                    $values = implode(', ', $columns);
-                    $columns_list = implode('`, `', array_keys($row));
-
-                    fwrite($db_file, "INSERT INTO `$table` (`$columns_list`) VALUES ($values);\n");
-                    $row_count++;
-
-                    // Flush every 100 rows
-                    if ($row_count % 100 === 0) {
-                        fflush($db_file);
+                    if (empty($rows)) {
+                        break;
                     }
+
+                    foreach ($rows as $row) {
+                        $columns = array_map(function($col) use ($wpdb) {
+                            return is_null($col) ? 'NULL' : $wpdb->prepare('%s', $col);
+                        }, array_values($row));
+
+                        $values = implode(', ', $columns);
+                        $safe_columns = array_map(function($col) {
+                            return str_replace('`', '``', $col);
+                        }, array_keys($row));
+                        $columns_list = implode('`, `', $safe_columns);
+
+                        fwrite($db_file, "INSERT INTO `$safe_table` (`$columns_list`) VALUES ($values);\n");
+                        $row_count++;
+
+                        // Flush every 100 rows
+                        if ($row_count % 100 === 0) {
+                            fflush($db_file);
+                        }
+                    }
+
+                    if (count($rows) < $batch_size) {
+                        break;
+                    }
+
+                    $offset += $batch_size;
                 }
 
                 fwrite($db_file, "\n");
@@ -254,7 +282,7 @@ class Backup_Manager {
             fclose($db_file);
             return true;
 
-        } catch (Exception $e) {
+        } catch (\Exception $e) {
             return new \WP_Error('php_db_backup_failed', $e->getMessage());
         }
     }
@@ -328,7 +356,7 @@ class Backup_Manager {
 
             return true;
 
-        } catch (Exception $e) {
+        } catch (\Exception $e) {
             return new \WP_Error('file_backup_failed', $e->getMessage());
         }
     }
@@ -419,7 +447,7 @@ class Backup_Manager {
 
             // Update progress every 100 files
             if ($progress_callback && ++$file_count % 100 === 0) {
-                $progress = 65 + (($file_count / $total_files) * 20); // 65-85% range
+                $progress = 65 + ($total_files > 0 ? ($file_count / $total_files) * 20 : 0); // 65-85% range
                 call_user_func($progress_callback, $progress, sprintf(__('Adding files to archive (%d/%d)...', 'simple-migrator'), $file_count, $total_files));
             }
         }
@@ -433,7 +461,17 @@ class Backup_Manager {
      * @return true|WP_Error
      */
     public function restore_backup($backup_id, $progress_callback = null) {
+        // Validate backup ID format
+        if (!preg_match('/^backup-\d{4}-\d{2}-\d{2}-\d{6}(-[a-f0-9]{4})?$/', $backup_id)) {
+            return new \WP_Error('invalid_backup_id', __('Invalid backup ID format.', 'simple-migrator'));
+        }
+
         $backup_path = $this->backup_dir . $backup_id . '/';
+
+        $real_backup_path = realpath($backup_path);
+        if ($real_backup_path === false || strpos($real_backup_path, realpath($this->backup_dir)) !== 0) {
+            return new \WP_Error('invalid_path', __('Backup path is outside allowed directory.', 'simple-migrator'));
+        }
 
         if (!file_exists($backup_path . 'backup.json')) {
             return new \WP_Error('backup_not_found', __('Backup not found.', 'simple-migrator'));
@@ -483,34 +521,74 @@ class Backup_Manager {
             return new \WP_Error('db_backup_missing', __('Database backup file not found.', 'simple-migrator'));
         }
 
-        try {
-            // Read SQL file
-            $sql = file_get_contents($sql_file);
+        // Stream SQL file line-by-line instead of loading entirely into memory
+        $handle = fopen($sql_file, 'r');
+        if (!$handle) {
+            return new \WP_Error('file_open_failed', __('Failed to open database backup file.', 'simple-migrator'));
+        }
 
-            // Split into individual queries
-            $queries = $this->split_sql_file($sql);
+        // Whitelist of allowed SQL statement prefixes
+        $allowed_prefixes = array(
+            'DROP TABLE', 'CREATE TABLE', 'INSERT INTO', 'SET', 'LOCK TABLES',
+            'UNLOCK TABLES', 'ALTER TABLE', '/*!', '--', 'REPLACE INTO'
+        );
 
-            // Disable foreign key checks
-            $wpdb->query('SET FOREIGN_KEY_CHECKS = 0;');
+        // Disable foreign key checks
+        $wpdb->query('SET FOREIGN_KEY_CHECKS = 0;');
 
-            foreach ($queries as $query) {
-                if (!empty(trim($query))) {
-                    $result = $wpdb->query($query);
-                    if ($result === false) {
-                        // Log error but continue
-                        error_log('SM: Failed to execute query: ' . substr($query, 0, 100));
-                    }
-                }
+        $current_query = '';
+        $in_string = false;
+        $escape = false;
+
+        while (($line = fgets($handle)) !== false) {
+            $trimmed = trim($line);
+
+            // Skip comments and empty lines
+            if (empty($trimmed) || strpos($trimmed, '--') === 0 || strpos($trimmed, '#') === 0) {
+                continue;
             }
 
-            // Re-enable foreign key checks
-            $wpdb->query('SET FOREIGN_KEY_CHECKS = 1;');
+            $current_query .= $line;
 
-            return true;
+            // Check if query is complete (ends with semicolon outside of strings)
+            if (substr($trimmed, -1) === ';') {
+                $query = trim($current_query);
 
-        } catch (Exception $e) {
-            return new \WP_Error('db_restore_failed', $e->getMessage());
+                if (!empty($query)) {
+                    // Validate against whitelist
+                    $is_allowed = false;
+                    $upper_query = strtoupper(ltrim($query));
+                    foreach ($allowed_prefixes as $prefix) {
+                        if (strpos($upper_query, $prefix) === 0) {
+                            $is_allowed = true;
+                            break;
+                        }
+                    }
+
+                    if ($is_allowed) {
+                        $result = $wpdb->query($query);
+                        if ($result === false) {
+                            if (defined('WP_DEBUG') && WP_DEBUG) {
+                                error_log('SM: Failed to execute restore query: ' . substr($query, 0, 100));
+                            }
+                        }
+                    } else {
+                        if (defined('WP_DEBUG') && WP_DEBUG) {
+                            error_log('SM: Skipped non-whitelisted SQL: ' . substr($query, 0, 100));
+                        }
+                    }
+                }
+
+                $current_query = '';
+            }
         }
+
+        fclose($handle);
+
+        // Re-enable foreign key checks
+        $wpdb->query('SET FOREIGN_KEY_CHECKS = 1;');
+
+        return true;
     }
 
     /**
@@ -713,7 +791,7 @@ class Backup_Manager {
                 }
 
                 // Skip the backup directory itself to prevent recursion
-                if (strpos($name, 'uploads/simple-migrator/backups/') === 0) {
+                if (strpos($name, 'uploads/sm-backups/') === 0) {
                     $skipped_count++;
                     continue;
                 }
@@ -725,15 +803,19 @@ class Backup_Manager {
                     $extracted_count++;
                 } else {
                     $failed_count++;
-                    error_log('SM: Failed to extract: ' . $name);
+                    if (defined('WP_DEBUG') && WP_DEBUG) {
+                        error_log('SM: Failed to extract: ' . $name);
+                    }
                 }
             }
 
             $zip->close();
 
             // Log summary
-            error_log(sprintf('SM: File restore complete - Extracted: %d, Skipped: %d, Failed: %d',
-                $extracted_count, $skipped_count, $failed_count));
+            if (defined('WP_DEBUG') && WP_DEBUG) {
+                error_log(sprintf('SM: File restore complete - Extracted: %d, Skipped: %d, Failed: %d',
+                    $extracted_count, $skipped_count, $failed_count));
+            }
 
             // Only return error if everything failed
             if ($extracted_count === 0 && $failed_count > 0) {
@@ -742,12 +824,14 @@ class Backup_Manager {
 
             // Warn about failures but don't fail entirely
             if ($failed_count > 0) {
-                error_log('SM: Some files failed to extract, but restore continued.');
+                if (defined('WP_DEBUG') && WP_DEBUG) {
+                    error_log('SM: Some files failed to extract, but restore continued.');
+                }
             }
 
             return true;
 
-        } catch (Exception $e) {
+        } catch (\Exception $e) {
             return new \WP_Error('file_restore_failed', $e->getMessage());
         }
     }
@@ -793,10 +877,20 @@ class Backup_Manager {
      * @return true|WP_Error
      */
     public function delete_backup($backup_id) {
+        // Validate backup ID format
+        if (!preg_match('/^backup-\d{4}-\d{2}-\d{2}-\d{6}(-[a-f0-9]{4})?$/', $backup_id)) {
+            return new \WP_Error('invalid_backup_id', __('Invalid backup ID format.', 'simple-migrator'));
+        }
+
         $backup_path = $this->backup_dir . $backup_id . '/';
 
         if (!file_exists($backup_path)) {
             return new \WP_Error('backup_not_found', __('Backup not found.', 'simple-migrator'));
+        }
+
+        $real_backup_path = realpath($backup_path);
+        if ($real_backup_path === false || strpos($real_backup_path, realpath($this->backup_dir)) !== 0) {
+            return new \WP_Error('invalid_path', __('Backup path is outside allowed directory.', 'simple-migrator'));
         }
 
         // Recursively delete backup directory
@@ -830,6 +924,13 @@ class Backup_Manager {
             return;
         }
 
+        // Security: Refuse to delete anything outside backup dir
+        $real_dir = realpath($dir);
+        $real_backup_dir = realpath($this->backup_dir);
+        if ($real_dir === false || $real_backup_dir === false || strpos($real_dir, $real_backup_dir) !== 0) {
+            return;
+        }
+
         $files = array_diff(scandir($dir), array('.', '..'));
 
         foreach ($files as $file) {
@@ -850,7 +951,9 @@ class Backup_Manager {
      */
     public function ajax_create_backup() {
         // Log to WordPress debug log
-        error_log('SM: ajax_create_backup() started');
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log('SM: ajax_create_backup() started');
+        }
 
         // Disable ALL output buffering to enable streaming
         while (ob_get_level() > 0) {
@@ -858,28 +961,36 @@ class Backup_Manager {
         }
 
         // Set headers to prevent buffering
-        header('Content-Type: application/json');
+        header('Content-Type: application/x-ndjson');
         header('X-Accel-Buffering: no'); // Nginx
 
         $verify = $this->verify_request();
         if (is_wp_error($verify)) {
-            error_log('SM: Verification failed: ' . $verify->get_error_message());
+            if (defined('WP_DEBUG') && WP_DEBUG) {
+                error_log('SM: Verification failed: ' . $verify->get_error_message());
+            }
             echo json_encode(array('type' => 'error', 'error' => $verify->get_error_message()));
             flush();
             exit;
         }
 
-        error_log('SM: Verification passed, starting backup');
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log('SM: Verification passed, starting backup');
+        }
 
         // Start time for calculation
         $start_time = microtime(true);
 
         try {
-            error_log('SM: About to call create_backup()');
+            if (defined('WP_DEBUG') && WP_DEBUG) {
+                error_log('SM: About to call create_backup()');
+            }
 
             // Send progress updates during backup
             $result = $this->create_backup(function($progress, $message) use ($start_time) {
-                error_log("SM: Progress: {$progress}% - {$message}");
+                if (defined('WP_DEBUG') && WP_DEBUG) {
+                    error_log("SM: Progress: {$progress}% - {$message}");
+                }
 
                 // Calculate elapsed time
                 $elapsed = microtime(true) - $start_time;
@@ -905,10 +1016,14 @@ class Backup_Manager {
                 flush();
             });
 
-            error_log('SM: Backup completed, result: ' . print_r($result, true));
+            if (defined('WP_DEBUG') && WP_DEBUG) {
+                error_log('SM: Backup completed, result: ' . print_r($result, true));
+            }
 
             if (is_wp_error($result)) {
-                error_log('SM: Backup error: ' . $result->get_error_message());
+                if (defined('WP_DEBUG') && WP_DEBUG) {
+                    error_log('SM: Backup error: ' . $result->get_error_message());
+                }
                 echo json_encode(array('type' => 'error', 'error' => $result->get_error_message()));
                 flush();
                 exit;
@@ -924,17 +1039,23 @@ class Backup_Manager {
                 'data' => $result
             ));
             flush();
-        } catch (Exception $e) {
-            error_log('SM: Exception caught: ' . $e->getMessage());
+        } catch (\Exception $e) {
+            if (defined('WP_DEBUG') && WP_DEBUG) {
+                error_log('SM: Exception caught: ' . $e->getMessage());
+            }
             echo json_encode(array('type' => 'error', 'error' => $e->getMessage()));
             flush();
-        } catch (Error $e) {
-            error_log('SM: Fatal error caught: ' . $e->getMessage());
+        } catch (\Error $e) {
+            if (defined('WP_DEBUG') && WP_DEBUG) {
+                error_log('SM: Fatal error caught: ' . $e->getMessage());
+            }
             echo json_encode(array('type' => 'error', 'error' => $e->getMessage()));
             flush();
         }
 
-        error_log('SM: ajax_create_backup() finished');
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log('SM: ajax_create_backup() finished');
+        }
         exit;
     }
 
@@ -951,6 +1072,12 @@ class Backup_Manager {
 
         if (empty($backup_id)) {
             wp_send_json_error(__('Invalid backup ID.', 'simple-migrator'));
+        }
+
+        // Validate backup ID format
+        if (!preg_match('/^backup-\d{4}-\d{2}-\d{2}-\d{6}(-[a-f0-9]{4})?$/', $backup_id)) {
+            wp_send_json_error(__('Invalid backup ID format.', 'simple-migrator'));
+            return;
         }
 
         $result = $this->restore_backup($backup_id);
@@ -975,6 +1102,12 @@ class Backup_Manager {
 
         if (empty($backup_id)) {
             wp_send_json_error(__('Invalid backup ID.', 'simple-migrator'));
+        }
+
+        // Validate backup ID format
+        if (!preg_match('/^backup-\d{4}-\d{2}-\d{2}-\d{6}(-[a-f0-9]{4})?$/', $backup_id)) {
+            wp_send_json_error(__('Invalid backup ID format.', 'simple-migrator'));
+            return;
         }
 
         $result = $this->delete_backup($backup_id);
@@ -1016,7 +1149,7 @@ class Backup_Manager {
             $nonce = $_SERVER['HTTP_X_WP_NONCE'];
         }
 
-        if (!$nonce || !wp_verify_nonce($nonce, 'wp_rest')) {
+        if (!$nonce || !wp_verify_nonce($nonce, 'sm_admin_nonce')) {
             return new \WP_Error('invalid_nonce', __('Invalid security token.', 'simple-migrator'));
         }
 

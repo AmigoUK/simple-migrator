@@ -9,6 +9,12 @@
     margin: 20px auto;
 }
 
+.sm-admin-wrap *,
+.sm-admin-wrap *::before,
+.sm-admin-wrap *::after {
+    box-sizing: border-box;
+}
+
 .sm-admin-wrap h1 {
     margin-bottom: 20px;
     padding-bottom: 10px;

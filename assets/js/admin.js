@@ -10,6 +10,24 @@
 'use strict';
 
 /**
+ * Constants
+ */
+const SM_CHUNK_SIZE = 2 * 1024 * 1024; // 2MB
+const SM_BATCH_SIZE = 1000;
+const SM_MAX_RETRIES = 5;
+const SM_PAUSE_CHECK_INTERVAL = 100; // ms
+
+/**
+ * HTML escaping utility to prevent XSS
+ */
+function escapeHtml(str) {
+    if (str === null || str === undefined) return '';
+    const div = document.createElement('div');
+    div.appendChild(document.createTextNode(String(str)));
+    return div.innerHTML;
+}
+
+/**
  * Migration State Manager
  * Handles the finite state machine for migration phases with persistence
  */
@@ -81,7 +99,8 @@ const MigrationState = {
             currentFileIndex: this.currentFileIndex,
             totalFiles: this.totalFiles,
             fileByteOffset: this.fileByteOffset,
-            completedFiles: this.completedFiles,
+            // Limit completedFiles to last 500 entries to avoid localStorage overflow
+            completedFiles: this.completedFiles.slice(-500),
             // Don't save manifest - it's too large and can be reloaded from source
             stats: this.stats,
             canResume: true
@@ -126,7 +145,17 @@ const MigrationState = {
                     delete state.manifest;
                 }
 
-                Object.assign(this, state);
+                // Whitelist safe keys to prevent prototype pollution
+                const safeKeys = [
+                    'version', 'phase', 'sourceUrl', 'currentTable', 'totalTables',
+                    'tableOffset', 'lastTableId', 'currentFileIndex', 'totalFiles',
+                    'fileByteOffset', 'completedFiles', 'stats', 'canResume'
+                ];
+                for (const key of safeKeys) {
+                    if (state.hasOwnProperty(key)) {
+                        this[key] = state[key];
+                    }
+                }
                 return true;
             }
         } catch (e) {
@@ -182,6 +211,7 @@ const MigrationState = {
             retries: 0,
             errors: []
         };
+        this.events = {};
     },
 
     /**
@@ -255,7 +285,7 @@ const API = {
     /**
      * Make request with retry logic
      */
-    async requestWithRetry(requestFn, context = 'API Request', maxRetries = 5) {
+    async requestWithRetry(requestFn, context = 'API Request', maxRetries = SM_MAX_RETRIES) {
         let lastError;
 
         for (let attempt = 0; attempt <= maxRetries; attempt++) {
@@ -363,12 +393,6 @@ const API = {
         return this.requestWithRetry(
             async () => {
                 const url = sourceUrl.replace(/\/$/, '') + '/wp-json/simple-migrator/v1/handshake';
-
-                // Debug logging
-                console.log('Simple Migrator - Testing Connection:');
-                console.log('  URL:', url);
-                console.log('  Secret length:', sourceSecret.length);
-                console.log('  Secret (first 20):', sourceSecret.substring(0, 20));
 
                 const response = await fetch(url, {
                     method: 'POST',
@@ -738,7 +762,9 @@ const Orchestrator = {
                     MigrationState.lastTableId = lastId;
 
                     // Update progress
-                    const progress = ((i + (totalRows / table.rows)) / dbInfo.tables.length) * 100;
+                    const progress = dbInfo.tables.length > 0
+                        ? ((i + (table.rows > 0 ? totalRows / table.rows : 1)) / dbInfo.tables.length) * 100
+                        : 0;
                     UI.updateProgress('database', progress, `Transferred ${totalRows}/${table.rows} rows from ${table.name}`);
 
                     // Save state periodically
@@ -770,7 +796,10 @@ const Orchestrator = {
     async filesPhase() {
         try {
             const manifest = MigrationState.manifest;
-            const files = manifest.files || [];
+            if (!manifest || !Array.isArray(manifest.files)) {
+                throw new Error('File manifest is missing or invalid. Please restart the migration.');
+            }
+            const files = manifest.files;
 
             // Check if we're resuming
             const startFile = MigrationState.currentFileIndex || 0;
@@ -833,7 +862,7 @@ const Orchestrator = {
      * Transfer a single file in chunks
      */
     async transferFile(filePath, fileSize) {
-        const chunkSize = 2 * 1024 * 1024; // 2MB
+        const chunkSize = SM_CHUNK_SIZE;
         let offset = MigrationState.fileByteOffset || 0;
 
         while (offset < fileSize && !MigrationState.isCancelled) {
@@ -922,6 +951,7 @@ const Orchestrator = {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
+                'X-WP-Nonce': smData.nonce,
             },
             body: JSON.stringify({
                 action: 'sm_create_table',
@@ -965,6 +995,7 @@ const Orchestrator = {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
+                'X-WP-Nonce': smData.nonce,
             },
             body: JSON.stringify({
                 action: 'sm_process_rows',
@@ -1057,15 +1088,19 @@ const Orchestrator = {
      * Pause migration
      */
     pause() {
+        this._previousPhase = MigrationState.phase;
         MigrationState.isPaused = true;
         MigrationState.setPhase('paused');
     },
 
     /**
-     * Resume migration
+     * Resume from pause (within active migration)
      */
     resume() {
         MigrationState.isPaused = false;
+        if (this._previousPhase && this._previousPhase !== 'paused') {
+            MigrationState.setPhase(this._previousPhase);
+        }
         // Resume will be handled by the current loop
     },
 
@@ -1140,10 +1175,23 @@ const UI = {
         // Copy key button
         jQuery('#sm-copy-key').on('click', function() {
             const key = jQuery('#sm-migration-key').text();
+            const btn = jQuery(this);
             navigator.clipboard.writeText(key).then(() => {
-                jQuery(this).text('Copied!');
+                btn.text('Copied!');
                 setTimeout(() => {
-                    jQuery(this).html('<span class="dashicons dashicons-admin-page"></span> Copy Key');
+                    btn.html('<span class="dashicons dashicons-admin-page"></span> Copy Key');
+                }, 2000);
+            }).catch(() => {
+                // Fallback for older browsers or non-HTTPS
+                const textarea = document.createElement('textarea');
+                textarea.value = key;
+                document.body.appendChild(textarea);
+                textarea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textarea);
+                btn.text('Copied!');
+                setTimeout(() => {
+                    btn.html('<span class="dashicons dashicons-admin-page"></span> Copy Key');
                 }, 2000);
             });
         });
@@ -1165,6 +1213,10 @@ const UI = {
             // Clear any previous migration state
             MigrationState.reset();
             MigrationState.clearSaved();
+            // Show pause/cancel buttons
+            jQuery('#sm-pause-migration').show();
+            jQuery('#sm-cancel-migration').show();
+            jQuery('#sm-start-migration').hide();
             Orchestrator.start();
         });
 
@@ -1234,6 +1286,8 @@ const UI = {
         }, function() {
             jQuery('#sm-current-mode').val(mode);
             UI.showCurrentMode();
+        }).fail(function(xhr, status, error) {
+            console.error('Failed to set mode:', error);
         });
     },
 
@@ -1264,7 +1318,13 @@ const UI = {
 
         const sourceUrl = parts[0];
         // Decode base64 encoded secret
-        const sourceSecret = atob(parts[1]);
+        let sourceSecret;
+        try {
+            sourceSecret = atob(parts[1]);
+        } catch (e) {
+            alert('Invalid migration key: failed to decode secret');
+            return;
+        }
 
         // Check if save key checkbox is enabled
         const saveKey = jQuery('#sm-save-key').is(':checked');
@@ -1295,26 +1355,25 @@ const UI = {
                 }
             });
 
-            // Show success
+            // Show success (using escapeHtml to prevent XSS)
             $result.removeClass('error').addClass('success');
-            $result.html(`
-                <h4>✓ Connection Successful!</h4>
-                <p><strong>Source URL:</strong> ${info.site_url}</p>
-                <p><strong>WordPress Version:</strong> ${info.wp_version}</p>
-                <p><strong>PHP Version:</strong> ${info.php_version}</p>
-                <p><strong>MySQL Version:</strong> ${info.mysql_version}</p>
-                <p><strong>Memory Limit:</strong> ${info.memory_limit}</p>
-            `);
+            $result.html(
+                '<h4>Connection Successful!</h4>' +
+                '<p><strong>Source URL:</strong> ' + escapeHtml(info.site_url) + '</p>' +
+                '<p><strong>WordPress Version:</strong> ' + escapeHtml(info.wp_version) + '</p>' +
+                '<p><strong>MySQL Version:</strong> ' + escapeHtml(info.mysql_version) + '</p>' +
+                '<p><strong>Memory Limit:</strong> ' + escapeHtml(info.memory_limit) + '</p>'
+            );
 
             // Show migration controls
             jQuery('#sm-migration-controls').slideDown();
         } catch (error) {
             $result.removeClass('success').addClass('error');
-            $result.html(`
-                <h4>✗ Connection Failed</h4>
-                <p><strong>Error:</strong> ${error.message}</p>
-                <p>Please check the migration key and try again.</p>
-            `);
+            $result.html(
+                '<h4>Connection Failed</h4>' +
+                '<p><strong>Error:</strong> ' + escapeHtml(error.message) + '</p>' +
+                '<p>Please check the migration key and try again.</p>'
+            );
         }
     },
 
@@ -1330,6 +1389,8 @@ const UI = {
             if (response.success) {
                 console.log('Source key saved for development');
             }
+        }).fail(function(xhr, status, error) {
+            console.error('Failed to save source key:', error);
         });
     },
 
@@ -1344,8 +1405,9 @@ const UI = {
             if (response.success && response.data.key) {
                 jQuery('#sm-source-key').val(response.data.key);
                 jQuery('#sm-save-key').prop('checked', true);
-                console.log('Loaded saved source key');
             }
+        }).fail(function(xhr, status, error) {
+            console.error('Failed to load source key:', error);
         });
     },
 
@@ -1378,18 +1440,29 @@ const UI = {
             Math.round((new Date(stats.endTime) - new Date(stats.startTime)) / 1000) : 0;
 
         jQuery('#sm-connection-result').removeClass('error').addClass('success').show();
-        jQuery('#sm-connection-result').html(`
-            <h4>🎉 Migration Complete!</h4>
-            <div class="sm-stats">
-                <p><strong>Duration:</strong> ${Math.floor(duration / 60)}m ${duration % 60}s</p>
-                <p><strong>Rows Transferred:</strong> ${stats.rowsTransferred.toLocaleString()}</p>
-                <p><strong>Files Transferred:</strong> ${stats.filesTransferred.toLocaleString()}</p>
-                <p><strong>Data Transferred:</strong> ${UI.formatBytes(stats.bytesTransferred)}</p>
-                ${stats.retries > 0 ? `<p><strong>Retries:</strong> ${stats.retries}</p>` : ''}
-                ${stats.errors.length > 0 ? `<p><strong>Errors Encountered:</strong> ${stats.errors.length}</p>` : ''}
-            </div>
-            <p><a href="${smData.homeUrl}" target="_blank" class="button button-primary">View Site</a></p>
-        `);
+        // Validate homeUrl before using in href
+        let viewSiteLink = '';
+        try {
+            const urlObj = new URL(smData.homeUrl);
+            if (urlObj.protocol === 'http:' || urlObj.protocol === 'https:') {
+                viewSiteLink = '<p><a href="' + escapeHtml(smData.homeUrl) + '" target="_blank" class="button button-primary">View Site</a></p>';
+            }
+        } catch (e) {
+            // Invalid URL, skip the link
+        }
+
+        jQuery('#sm-connection-result').html(
+            '<h4>Migration Complete!</h4>' +
+            '<div class="sm-stats">' +
+            '<p><strong>Duration:</strong> ' + escapeHtml(Math.floor(duration / 60) + 'm ' + (duration % 60) + 's') + '</p>' +
+            '<p><strong>Rows Transferred:</strong> ' + escapeHtml(stats.rowsTransferred.toLocaleString()) + '</p>' +
+            '<p><strong>Files Transferred:</strong> ' + escapeHtml(stats.filesTransferred.toLocaleString()) + '</p>' +
+            '<p><strong>Data Transferred:</strong> ' + escapeHtml(UI.formatBytes(stats.bytesTransferred)) + '</p>' +
+            (stats.retries > 0 ? '<p><strong>Retries:</strong> ' + escapeHtml(stats.retries) + '</p>' : '') +
+            (stats.errors.length > 0 ? '<p><strong>Errors Encountered:</strong> ' + escapeHtml(stats.errors.length) + '</p>' : '') +
+            '</div>' +
+            viewSiteLink
+        );
     },
 
     /**
@@ -1399,19 +1472,18 @@ const UI = {
         jQuery('#sm-migration-controls').hide();
         jQuery('#sm-connection-result').removeClass('success').addClass('error').show();
 
-        let errorDetails = `<p><strong>Error:</strong> ${message}</p>`;
+        let errorDetails = '<p><strong>Error:</strong> ' + escapeHtml(message) + '</p>';
 
         if (error && error.context) {
-            errorDetails += `<p><strong>Context:</strong> ${error.context}</p>`;
+            errorDetails += '<p><strong>Context:</strong> ' + escapeHtml(error.context) + '</p>';
         }
 
-        errorDetails += `
-            <p>The migration has been paused and can be resumed later.</p>
-            <button type="button" class="button button-secondary" id="sm-show-error-details">Show Technical Details</button>
-            <div id="sm-error-details" style="display:none; margin-top: 15px; padding: 10px; background: #f0f0f0; border-radius: 4px;">
-                <pre style="white-space: pre-wrap; word-wrap: break-word;">${error ? error.stack || message : message}</pre>
-            </div>
-        `;
+        errorDetails +=
+            '<p>The migration has been paused and can be resumed later.</p>' +
+            '<button type="button" class="button button-secondary" id="sm-show-error-details">Show Technical Details</button>' +
+            '<div id="sm-error-details" style="display:none; margin-top: 15px; padding: 10px; background: #f0f0f0; border-radius: 4px;">' +
+            '<pre style="white-space: pre-wrap; word-wrap: break-word;">' + escapeHtml(error ? error.stack || message : message) + '</pre>' +
+            '</div>';
 
         jQuery('#sm-connection-result').html(errorDetails);
 
@@ -1425,10 +1497,10 @@ const UI = {
      * Format bytes to human readable
      */
     formatBytes(bytes) {
-        if (bytes === 0) return '0 Bytes';
+        if (!bytes || bytes <= 0) return '0 Bytes';
         const k = 1024;
         const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
-        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        const i = Math.min(Math.floor(Math.log(bytes) / Math.log(k)), sizes.length - 1);
         return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
     },
 
@@ -1461,6 +1533,8 @@ const UI = {
                 // Reload page to show new key
                 location.reload();
             }
+        }).fail(function(xhr, status, error) {
+            console.error('Failed to regenerate key:', error);
         });
     },
 
@@ -1478,21 +1552,21 @@ const UI = {
             if (response.success) {
                 UI.renderBackupList(response.data.backups);
             } else {
-                $list.html(`
-                    <div class="sm-error-message" style="color: #d63638; padding: 10px; background: #fff; border-left: 4px solid #d63638;">
-                        <strong>Failed to load backups:</strong><br>
-                        <code>${response.data || 'Unknown error'}</code>
-                    </div>
-                `);
+                $list.html(
+                    '<div class="sm-error-message" style="color: #d63638; padding: 10px; background: #fff; border-left: 4px solid #d63638;">' +
+                    '<strong>Failed to load backups:</strong><br>' +
+                    '<code>' + escapeHtml(response.data || 'Unknown error') + '</code>' +
+                    '</div>'
+                );
             }
         }).fail(function(xhr, status, error) {
-            $list.html(`
-                <div class="sm-error-message" style="color: #d63638; padding: 10px; background: #fff; border-left: 4px solid #d63638;">
-                    <strong>Failed to load backups:</strong><br>
-                    <code>${error || 'Network error'}</code><br>
-                    <small>Check browser console (F12) for details</small>
-                </div>
-            `);
+            $list.html(
+                '<div class="sm-error-message" style="color: #d63638; padding: 10px; background: #fff; border-left: 4px solid #d63638;">' +
+                '<strong>Failed to load backups:</strong><br>' +
+                '<code>' + escapeHtml(error || 'Network error') + '</code><br>' +
+                '<small>Check browser console (F12) for details</small>' +
+                '</div>'
+            );
             console.error('Load backups error:', {
                 status: status,
                 error: error,
@@ -1546,13 +1620,13 @@ const UI = {
 
         $list.html(html);
 
-        // Bind event handlers
-        jQuery('.sm-restore-backup').on('click', function() {
+        // Use event delegation on parent element for dynamically created buttons
+        $list.off('click', '.sm-restore-backup').on('click', '.sm-restore-backup', function() {
             const backupId = jQuery(this).data('backup-id');
             UI.restoreBackup(backupId);
         });
 
-        jQuery('.sm-delete-backup').on('click', function() {
+        $list.off('click', '.sm-delete-backup').on('click', '.sm-delete-backup', function() {
             const backupId = jQuery(this).data('backup-id');
             UI.deleteBackup(backupId);
         });
@@ -1652,10 +1726,10 @@ const UI = {
                                 const remaining = data.remaining < 9999 ?
                                     UI.formatTime(data.remaining) : 'calculating...';
 
-                                $status.html(`
-                                    ${data.message}<br>
-                                    <small>Time: ${elapsed} elapsed, ~${remaining} remaining</small>
-                                `);
+                                $status.html(
+                                    escapeHtml(data.message) + '<br>' +
+                                    '<small>Time: ' + escapeHtml(elapsed) + ' elapsed, ~' + escapeHtml(remaining) + ' remaining</small>'
+                                );
                             } else if (data.type === 'complete') {
                                 // Final result
                                 finalResult = data.data;
@@ -1670,10 +1744,11 @@ const UI = {
                                 throw new Error(data.error);
                             }
                         } catch (e) {
-                            // Only log parsing errors, not re-thrown errors
-                            if (!hasError) {
-                                console.warn('Failed to parse backup progress:', line, e);
+                            // Re-throw errors from error type messages
+                            if (hasError) {
+                                throw e;
                             }
+                            console.warn('Failed to parse backup progress:', line, e);
                         }
                     }
                 }
@@ -1694,10 +1769,10 @@ const UI = {
                 const totalTime = finalResult.total_time ?
                     UI.formatTime(finalResult.total_time) : UI.formatTime((Date.now() - startTime) / 1000);
 
-                $status.html(`
-                    <strong>✓ Backup created successfully!</strong><br>
-                    <small>Total time: ${totalTime}</small>
-                `);
+                $status.html(
+                    '<strong>Backup created successfully!</strong><br>' +
+                    '<small>Total time: ' + escapeHtml(totalTime) + '</small>'
+                );
 
                 // Reload backups list after a short delay
                 setTimeout(() => {
@@ -1710,11 +1785,11 @@ const UI = {
             }
         } catch (error) {
             console.error('Backup error:', error);
-            $status.html(`
-                <strong style="color: #d63638;">✗ Backup failed!</strong><br>
-                <small>Error: ${error.message}</small><br>
-                <small>Check browser console (F12) for details</small>
-            `);
+            $status.html(
+                '<strong style="color: #d63638;">Backup failed!</strong><br>' +
+                '<small>Error: ' + escapeHtml(error.message) + '</small><br>' +
+                '<small>Check browser console (F12) for details</small>'
+            );
         } finally {
             $createBtn.prop('disabled', false);
         }
@@ -1731,7 +1806,7 @@ const UI = {
         }
 
         // Double confirmation
-        if (!confirm('This is your last chance! Type "OK" to confirm restore.')) {
+        if (!confirm('This is your last chance! Click "OK" to confirm restore.')) {
             return;
         }
 
@@ -1780,6 +1855,8 @@ const UI = {
             if (response.success) {
                 UI.loadBackups();
             }
+        }).fail(function(xhr, status, error) {
+            console.error('Failed to delete backup:', error);
         });
     }
 };

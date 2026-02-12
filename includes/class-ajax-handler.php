@@ -108,7 +108,7 @@ class AJAX_Handler {
         $nonce = $this->get_input('nonce');
 
         // Verify nonce
-        if (!$nonce || !wp_verify_nonce($nonce, 'wp_rest')) {
+        if (!$nonce || !wp_verify_nonce($nonce, 'sm_admin_nonce')) {
             return new \WP_Error('invalid_nonce', __('Invalid security token.', 'simple-migrator'));
         }
 
@@ -127,12 +127,14 @@ class AJAX_Handler {
         $verify = $this->verify_request();
         if (is_wp_error($verify)) {
             wp_send_json_error($verify->get_error_message());
+            return;
         }
 
         $mode = isset($_POST['mode']) ? sanitize_text_field($_POST['mode']) : 'none';
 
         if (!in_array($mode, array('source', 'destination', 'none'))) {
             wp_send_json_error(__('Invalid mode.', 'simple-migrator'));
+            return;
         }
 
         update_option('sm_source_mode', $mode);
@@ -149,13 +151,14 @@ class AJAX_Handler {
         $verify = $this->verify_request();
         if (is_wp_error($verify)) {
             wp_send_json_error($verify->get_error_message());
+            return;
         }
 
         $new_secret = wp_generate_password(64, true, true);
         update_option('sm_migration_secret', $new_secret);
 
         // Base64 encode the secret to avoid special characters breaking the format
-        $key_string = home_url('|') . base64_encode($new_secret);
+        $key_string = home_url() . '|' . base64_encode($new_secret);
 
         wp_send_json_success(array(
             'key' => $key_string
@@ -169,12 +172,14 @@ class AJAX_Handler {
         $verify = $this->verify_request();
         if (is_wp_error($verify)) {
             wp_send_json_error($verify->get_error_message());
+            return;
         }
 
         $source_url = isset($_POST['source_url']) ? esc_url_raw($_POST['source_url']) : '';
 
         if (empty($source_url)) {
             wp_send_json_error(__('Invalid source URL.', 'simple-migrator'));
+            return;
         }
 
         update_option('sm_source_url', $source_url);
@@ -193,18 +198,26 @@ class AJAX_Handler {
         $verify = $this->verify_request();
         if (is_wp_error($verify)) {
             wp_send_json_error($verify->get_error_message());
+            return;
         }
 
-        $key = isset($_POST['key']) ? sanitize_text_field($_POST['key']) : '';
+        $key = isset($_POST['key']) ? wp_unslash(trim($_POST['key'])) : '';
+        // Validate key format (URL|base64)
+        if (!empty($key) && !preg_match('/^https?:\/\/.+\|[A-Za-z0-9+\/=]+$/', $key)) {
+            wp_send_json_error(__('Invalid key format.', 'simple-migrator'));
+            return;
+        }
 
         if (empty($key)) {
             wp_send_json_error(__('Invalid key.', 'simple-migrator'));
+            return;
         }
 
         // Validate key format
         $parts = explode('|', $key);
         if (count($parts) !== 2) {
             wp_send_json_error(__('Invalid key format.', 'simple-migrator'));
+            return;
         }
 
         // Base64 encode for basic obfuscation (not encryption!)
@@ -223,6 +236,7 @@ class AJAX_Handler {
         $verify = $this->verify_request();
         if (is_wp_error($verify)) {
             wp_send_json_error($verify->get_error_message());
+            return;
         }
 
         $encoded_key = get_option('sm_dev_saved_source_key', '');
@@ -243,6 +257,7 @@ class AJAX_Handler {
         $verify = $this->verify_request();
         if (is_wp_error($verify)) {
             wp_send_json_error($verify->get_error_message());
+            return;
         }
 
         global $wpdb;
@@ -262,7 +277,21 @@ class AJAX_Handler {
         $verify = $this->verify_request();
         if (is_wp_error($verify)) {
             wp_send_json_error($verify->get_error_message());
+            return;
         }
+
+        if (is_multisite()) {
+            wp_send_json_error(__('Simple Migrator does not support multisite installations.', 'simple-migrator'));
+            return;
+        }
+
+        // Check for concurrent migration
+        $lock = get_transient('sm_migration_lock');
+        if ($lock && $lock !== get_current_user_id()) {
+            wp_send_json_error(__('Another migration is already in progress.', 'simple-migrator'));
+            return;
+        }
+        set_transient('sm_migration_lock', get_current_user_id(), 30 * MINUTE_IN_SECONDS);
 
         // Get parameters using unified input method
         $overwrite = $this->get_input('overwrite');
@@ -279,6 +308,7 @@ class AJAX_Handler {
 
         if (!is_array($tables)) {
             wp_send_json_error(__('Invalid tables parameter.', 'simple-migrator'));
+            return;
         }
 
         global $wpdb;
@@ -433,6 +463,7 @@ class AJAX_Handler {
         $verify = $this->verify_request();
         if (is_wp_error($verify)) {
             wp_send_json_error($verify->get_error_message());
+            return;
         }
 
         global $wpdb;
@@ -476,6 +507,9 @@ class AJAX_Handler {
 
         // Restore preserved admin account
         $this->restore_admin_account();
+
+        // Release migration lock
+        delete_transient('sm_migration_lock');
 
         // Flush caches to ensure changes take effect
         wp_cache_flush();
@@ -535,6 +569,7 @@ class AJAX_Handler {
         $verify = $this->verify_request();
         if (is_wp_error($verify)) {
             wp_send_json_error($verify->get_error_message());
+            return;
         }
 
         // Get parameters using unified input method
@@ -553,6 +588,7 @@ class AJAX_Handler {
 
         if (empty($table) || !is_array($rows)) {
             wp_send_json_error(__('Invalid parameters.', 'simple-migrator'));
+            return;
         }
 
         global $wpdb;
@@ -563,6 +599,7 @@ class AJAX_Handler {
         // Validate table name for security
         if (!preg_match('/^[a-zA-Z0-9_]+$/', $table_name)) {
             wp_send_json_error(__('Invalid table name.', 'simple-migrator'));
+            return;
         }
 
         $inserted = 0;
@@ -600,6 +637,15 @@ class AJAX_Handler {
 
                     // Build INSERT query
                     $columns = array_keys($clean_row);
+
+                    // Validate column names to prevent SQL injection
+                    foreach ($columns as $col) {
+                        if (!preg_match('/^[a-zA-Z0-9_]+$/', $col)) {
+                            $errors[] = "Invalid column name: {$col}";
+                            continue 2; // Skip this entire row
+                        }
+                    }
+
                     $placeholders = array_fill(0, count($columns), '%s');
                     $values = array_values($clean_row);
 
@@ -615,14 +661,27 @@ class AJAX_Handler {
                         // Track duplicate key errors separately
                         $duplicates++;
                     }
-                } catch (Exception $e) {
+
+                    if ($result === false && strpos($wpdb->last_error, 'Duplicate entry') === false) {
+                        $errors[] = "SQL error: " . $wpdb->last_error;
+                        // If too many errors, rollback
+                        if (count($errors) > 50) {
+                            $wpdb->query('ROLLBACK');
+                            wp_send_json_error(array(
+                                'message' => __('Too many errors, transaction rolled back.', 'simple-migrator'),
+                                'errors' => $errors
+                            ));
+                            return;
+                        }
+                    }
+                } catch (\Exception $e) {
                     $errors[] = $e->getMessage();
                 }
             }
 
             // Commit transaction if we got here without exceptions
             $wpdb->query('COMMIT');
-        } catch (Exception $e) {
+        } catch (\Exception $e) {
             // Rollback on any error
             $wpdb->query('ROLLBACK');
             $errors[] = "Transaction failed: " . $e->getMessage();
@@ -659,47 +718,69 @@ class AJAX_Handler {
         $verify = $this->verify_request();
         if (is_wp_error($verify)) {
             wp_send_json_error($verify->get_error_message());
+            return;
         }
 
         $path = isset($_POST['path']) ? sanitize_text_field($_POST['path']) : '';
         $data = isset($_POST['data']) ? $_POST['data'] : '';
+        // Validate base64 format
+        if (!empty($data) && !preg_match('/^[A-Za-z0-9+\/=\s]+$/', $data)) {
+            wp_send_json_error(__('Invalid data format.', 'simple-migrator'));
+            return;
+        }
         $checksum = isset($_POST['checksum']) ? sanitize_text_field($_POST['checksum']) : '';
         $offset = isset($_POST['offset']) ? intval($_POST['offset']) : 0;
 
         if (empty($path) || empty($data)) {
             wp_send_json_error(__('Invalid parameters.', 'simple-migrator'));
+            return;
         }
 
-        // Security: Ensure path is within wp-content
-        $full_path = realpath(WP_CONTENT_DIR . '/' . dirname($path));
+        // Security: Reject paths with traversal attempts or null bytes
+        if (strpos($path, '..') !== false || strpos($path, "\0") !== false) {
+            wp_send_json_error(__('Invalid file path.', 'simple-migrator'));
+            return;
+        }
+
         $content_dir = realpath(WP_CONTENT_DIR);
 
-        if ($full_path === false || strpos($full_path, $content_dir) !== 0) {
+        // Create directory first
+        $target_dir = WP_CONTENT_DIR . '/' . dirname($path);
+        if (!file_exists($target_dir)) {
+            wp_mkdir_p($target_dir);
+        }
+
+        // Validate the resolved path is within wp-content
+        $full_path = realpath($target_dir);
+        if ($full_path === false || strpos($full_path, $content_dir . DIRECTORY_SEPARATOR) !== 0) {
             wp_send_json_error(__('Invalid file path.', 'simple-migrator'));
+            return;
         }
 
-        // Create directory if it doesn't exist
-        if (!file_exists($full_path)) {
-            wp_mkdir_p($full_path);
-        }
-
-        $file_path = WP_CONTENT_DIR . '/' . $path;
+        $file_path = $full_path . DIRECTORY_SEPARATOR . basename($path);
 
         // Decode base64 data
-        $decoded_data = base64_decode($data);
+        $decoded_data = base64_decode($data, true);
+        if ($decoded_data === false) {
+            wp_send_json_error(__('Failed to decode data.', 'simple-migrator'));
+            return;
+        }
 
         // Verify checksum
         $actual_checksum = md5($decoded_data);
         if ($actual_checksum !== $checksum) {
             wp_send_json_error(__('Checksum verification failed.', 'simple-migrator'));
+            return;
         }
 
         // Write chunk with exclusive lock to prevent race conditions
         $mode = ($offset === 0) ? 'wb' : 'ab';
+        $result = false;
         $handle = fopen($file_path, $mode);
 
         if ($handle === false) {
             wp_send_json_error(__('Failed to open file for writing.', 'simple-migrator'));
+            return;
         }
 
         // Acquire exclusive lock and ensure it's released when file is closed
@@ -716,6 +797,7 @@ class AJAX_Handler {
             } else {
                 fclose($handle);
                 wp_send_json_error(__('Could not acquire file lock.', 'simple-migrator'));
+                return;
             }
         } finally {
             // Always close the handle, which releases the lock
@@ -724,6 +806,7 @@ class AJAX_Handler {
 
         if ($result === false) {
             wp_send_json_error(__('Failed to write file chunk.', 'simple-migrator'));
+            return;
         }
 
         // Set proper permissions
@@ -742,22 +825,34 @@ class AJAX_Handler {
         $verify = $this->verify_request();
         if (is_wp_error($verify)) {
             wp_send_json_error($verify->get_error_message());
+            return;
         }
 
         $data = isset($_POST['data']) ? $_POST['data'] : '';
+        // Validate base64 format
+        if (!empty($data) && !preg_match('/^[A-Za-z0-9+\/=\s]+$/', $data)) {
+            wp_send_json_error(__('Invalid data format.', 'simple-migrator'));
+            return;
+        }
         $checksum = isset($_POST['checksum']) ? sanitize_text_field($_POST['checksum']) : '';
 
         if (empty($data)) {
             wp_send_json_error(__('Invalid parameters.', 'simple-migrator'));
+            return;
         }
 
         // Decode base64 data
-        $zip_data = base64_decode($data);
+        $zip_data = base64_decode($data, true);
+        if ($zip_data === false) {
+            wp_send_json_error(__('Failed to decode data.', 'simple-migrator'));
+            return;
+        }
 
         // Verify checksum
         $actual_checksum = md5($zip_data);
         if ($actual_checksum !== $checksum) {
             wp_send_json_error(__('Checksum verification failed.', 'simple-migrator'));
+            return;
         }
 
         // Create temporary file with better cleanup handling
@@ -780,6 +875,7 @@ class AJAX_Handler {
         if ($result !== true) {
             unlink($temp_file);
             wp_send_json_error(__('Failed to open zip archive.', 'simple-migrator'));
+            return;
         }
 
         $extracted_count = 0;
@@ -788,9 +884,29 @@ class AJAX_Handler {
         for ($i = 0; $i < $zip->numFiles; $i++) {
             $file_path = $zip->getNameIndex($i);
 
-            // Security: Ensure path is safe (no directory traversal)
-            if (strpos($file_path, '..') !== false) {
+            // Security: Ensure path is safe (no directory traversal or null bytes)
+            if (strpos($file_path, '..') !== false || strpos($file_path, "\0") !== false) {
                 $errors[] = "Skipped unsafe path: {$file_path}";
+                continue;
+            }
+
+            // Validate path depth doesn't go negative
+            $parts = explode('/', $file_path);
+            $depth = 0;
+            $safe = true;
+            foreach ($parts as $part) {
+                if ($part === '..') {
+                    $depth--;
+                } elseif ($part !== '.' && $part !== '') {
+                    $depth++;
+                }
+                if ($depth < 0) {
+                    $safe = false;
+                    break;
+                }
+            }
+            if (!$safe) {
+                $errors[] = "Path outside allowed directory: {$file_path}";
                 continue;
             }
 
@@ -838,6 +954,7 @@ class AJAX_Handler {
         $verify = $this->verify_request();
         if (is_wp_error($verify)) {
             wp_send_json_error($verify->get_error_message());
+            return;
         }
 
         // Get source and destination URLs
@@ -846,6 +963,7 @@ class AJAX_Handler {
 
         if (empty($source_url)) {
             wp_send_json_error(__('Source URL not configured.', 'simple-migrator'));
+            return;
         }
 
         $fixer = new Serialization_Fixer();
@@ -864,6 +982,7 @@ class AJAX_Handler {
         $verify = $this->verify_request();
         if (is_wp_error($verify)) {
             wp_send_json_error($verify->get_error_message());
+            return;
         }
 
         // Flush rewrite rules
@@ -891,6 +1010,7 @@ class AJAX_Handler {
                     error_log("SM: verify_request failed: " . $verify->get_error_message());
                 }
                 wp_send_json_error($verify->get_error_message());
+                return;
             }
 
             // Get parameters using unified input method
@@ -917,11 +1037,13 @@ class AJAX_Handler {
                     error_log("SM: Invalid parameters - schema: " . (empty($schema) ? 'empty' : 'present') . ", source_table_name: " . $source_table_name);
                 }
                 wp_send_json_error(__('Invalid parameters.', 'simple-migrator'));
+                return;
             }
 
             global $wpdb;
 
             // Show errors for debugging
+            $prev_show_errors = $wpdb->show_errors;
             $wpdb->show_errors = true;
 
             // Calculate new table name by replacing source prefix with destination prefix
@@ -938,9 +1060,12 @@ class AJAX_Handler {
             // Replace all backtick-quoted references to the old table name
             $schema = str_replace('`' . $source_table_name . '`', '`' . $new_table_name . '`', $schema);
 
-            // Also handle unquoted references in constraints (like REFERENCES wp_tablename)
-            // But be careful to only replace when it's a standalone table name, not part of another string
-            $schema = preg_replace('/\b' . preg_quote($source_table_name, '/') . '\b/', $new_table_name, $schema);
+            // Only replace table name in REFERENCES clauses (not arbitrary occurrences)
+            $schema = preg_replace(
+                '/REFERENCES\s+`?' . preg_quote($source_table_name, '/') . '`?/i',
+                'REFERENCES `' . $new_table_name . '`',
+                $schema
+            );
 
             // Clean up any multiple backticks that might have been created
             $schema = str_replace('``', '`', $schema);
@@ -962,8 +1087,12 @@ class AJAX_Handler {
                     error_log("SM: CREATE TABLE failed: " . $error);
                     error_log("SM: Schema (first 500 chars): " . substr($schema, 0, 500));
                 }
+                $wpdb->show_errors = $prev_show_errors;
                 wp_send_json_error($error);
+                return;
             }
+
+            $wpdb->show_errors = $prev_show_errors;
 
             wp_send_json_success(array(
                 'table' => $new_table_name,
@@ -974,11 +1103,13 @@ class AJAX_Handler {
                 error_log("SM: Exception in create_table: " . $e->getMessage());
             }
             wp_send_json_error($e->getMessage());
+            return;
         } catch (\Throwable $e) {
             if (defined('WP_DEBUG') && WP_DEBUG) {
                 error_log("SM: Throwable in create_table: " . $e->getMessage());
             }
             wp_send_json_error($e->getMessage());
+            return;
         }
     }
 
@@ -989,12 +1120,14 @@ class AJAX_Handler {
         $verify = $this->verify_request();
         if (is_wp_error($verify)) {
             wp_send_json_error($verify->get_error_message());
+            return;
         }
 
         $table = isset($_POST['table']) ? sanitize_text_field($_POST['table']) : '';
 
         if (empty($table)) {
             wp_send_json_error(__('Invalid table name.', 'simple-migrator'));
+            return;
         }
 
         global $wpdb;
@@ -1002,12 +1135,14 @@ class AJAX_Handler {
         // Security: Validate table name format
         if (!preg_match('/^[a-zA-Z0-9_]+$/', $table)) {
             wp_send_json_error(__('Invalid table name.', 'simple-migrator'));
+            return;
         }
 
         // Check if table exists and belongs to this WordPress install
         $table_exists = $wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $table));
         if (!$table_exists) {
             wp_send_json_error(__('Table does not exist.', 'simple-migrator'));
+            return;
         }
 
         // Drop table - table name is validated above
@@ -1015,6 +1150,7 @@ class AJAX_Handler {
 
         if ($result === false) {
             wp_send_json_error($wpdb->last_error);
+            return;
         }
 
         wp_send_json_success(array(
@@ -1022,6 +1158,3 @@ class AJAX_Handler {
         ));
     }
 }
-
-// Initialize AJAX handler
-AJAX_Handler::get_instance();

@@ -37,6 +37,7 @@ class REST_Controller extends WP_REST_Controller {
 
     /**
      * Constructor
+     * Note: Constructor is public because WP_REST_Controller inheritance prevents private constructor.
      */
     public function __construct() {
         $this->namespace = SM_API_NAMESPACE;
@@ -132,28 +133,8 @@ class REST_Controller extends WP_REST_Controller {
         }
 
         // Check for common TLDs used in local development
-        if (preg_match('/\.(local|dev|test|wp|example|localhost|invalid)$/', $host)) {
+        if (preg_match('/\.(local|test|example|localhost)$/', $host)) {
             return true;
-        }
-
-        // Check for similar development hostnames (e.g., developmentwp vs developmentwp2)
-        // Get current site host for comparison
-        $current_host = parse_url(home_url(), PHP_URL_HOST);
-        if ($current_host) {
-            // Remove numeric suffixes and compare base names
-            $origin_base = preg_replace('/\d+$/', '', $host);
-            $current_base = preg_replace('/\d+$/', '', $current_host);
-
-            // If base hostnames match (with or without numbers), treat as local
-            if ($origin_base === $current_base || $host === $current_base || $current_host === $origin_base) {
-                return true;
-            }
-
-            // Allow if one is a numbered variant of the other
-            if (preg_match('/^' . preg_quote($current_base, '/') . '\d*$/', $host) ||
-                preg_match('/^' . preg_quote($origin_base, '/') . '\d*$/', $current_host)) {
-                return true;
-            }
         }
 
         // Check for hostname without TLD (common in local development)
@@ -415,7 +396,15 @@ class REST_Controller extends WP_REST_Controller {
         }
 
         // Verify secret
-        $stored_secret = get_option('sm_migration_secret');
+        $stored_secret = get_option('sm_migration_secret', '');
+
+        if (empty($stored_secret)) {
+            return new WP_Error(
+                'no_secret_configured',
+                __('Migration secret has not been configured.', 'simple-migrator'),
+                array('status' => 500)
+            );
+        }
 
         if (!hash_equals($stored_secret, $secret)) {
             return new WP_Error(
@@ -445,6 +434,14 @@ class REST_Controller extends WP_REST_Controller {
             );
         }
 
+        if (is_multisite()) {
+            return new WP_Error(
+                'multisite_unsupported',
+                __('Simple Migrator does not support multisite installations.', 'simple-migrator'),
+                array('status' => 400)
+            );
+        }
+
         // Get the origin of the request for CORS tracking
         $origin = $this->get_request_origin();
 
@@ -469,14 +466,12 @@ class REST_Controller extends WP_REST_Controller {
         // Return server info
         $info = array(
             'version'         => SM_VERSION,
-            'php_version'     => phpversion(),
             'wp_version'      => get_bloginfo('version'),
             'mysql_version'   => $GLOBALS['wpdb']->db_version(),
             'max_upload_size' => size_format(wp_max_upload_size()),
             'memory_limit'    => ini_get('memory_limit'),
             'max_execution'   => ini_get('max_execution_time'),
             'site_url'        => home_url(),
-            'admin_email'     => get_option('admin_email'),
             'timestamp'       => current_time('mysql'),
         );
 
@@ -519,7 +514,7 @@ class REST_Controller extends WP_REST_Controller {
         global $wpdb;
 
         $tables = $wpdb->get_results(
-            "SHOW TABLES LIKE '{$wpdb->prefix}%'",
+            $wpdb->prepare("SHOW TABLES LIKE %s", $wpdb->esc_like($wpdb->prefix) . '%'),
             ARRAY_N
         );
 
@@ -555,7 +550,7 @@ class REST_Controller extends WP_REST_Controller {
         $content_dir = realpath(WP_CONTENT_DIR);
 
         // More robust path validation - ensure path starts with content dir and has directory separator
-        if ($full_path === false || strpos($full_path, $content_dir . DIRECTORY_SEPARATOR) !== 0 && $full_path !== $content_dir) {
+        if ($full_path === false || (strpos($full_path, $content_dir . DIRECTORY_SEPARATOR) !== 0 && $full_path !== $content_dir)) {
             return new WP_Error(
                 'invalid_path',
                 __('Invalid file path.', 'simple-migrator'),
@@ -667,6 +662,15 @@ class REST_Controller extends WP_REST_Controller {
             );
         }
 
+        // Limit batch size to prevent DOS
+        if (count($files) > 100) {
+            return new WP_Error(
+                'batch_too_large',
+                __('Batch request limited to 100 files.', 'simple-migrator'),
+                array('status' => 400)
+            );
+        }
+
         // Create temporary zip file with better cleanup
         $temp_dir = sys_get_temp_dir();
         $temp_file = tempnam($temp_dir, 'sm_zip_');
@@ -757,6 +761,16 @@ class REST_Controller extends WP_REST_Controller {
 
         // Detect primary key column for keyset pagination
         $primary_key = $this->get_primary_key($table);
+
+        // Validate primary key column name
+        if ($primary_key && !preg_match('/^[a-zA-Z0-9_]+$/', $primary_key)) {
+            return new WP_Error(
+                'invalid_primary_key',
+                __('Invalid primary key column name.', 'simple-migrator'),
+                array('status' => 400)
+            );
+        }
+
         $use_keyset = ($primary_key && $last_id > 0);
 
         // Build query based on pagination method
@@ -908,7 +922,6 @@ class REST_Controller extends WP_REST_Controller {
             'wp_version' => get_bloginfo('version'),
             'table_prefix' => $GLOBALS['wpdb']->prefix,
             'is_multisite' => is_multisite(),
-            'active_plugins' => get_option('active_plugins', array()),
         ));
     }
 
@@ -940,10 +953,3 @@ class REST_Controller extends WP_REST_Controller {
     }
 }
 
-// Initialize REST Controller early to catch init hook for CORS
-REST_Controller::get_instance();
-
-// Register routes during rest_api_init
-add_action('rest_api_init', function() {
-    REST_Controller::get_instance()->register_routes();
-});

@@ -159,6 +159,10 @@ class WP_CLI_Commands extends WP_CLI_Command {
 
         $metadata = json_decode(file_get_contents($backup_path . 'backup.json'), true);
 
+        if (!is_array($metadata)) {
+            WP_CLI::error('Backup metadata is invalid or corrupted.');
+        }
+
         // Confirm restoration
         if (!isset($assoc_args['yes'])) {
             WP_CLI::warning('This will REPLACE your current database and files!');

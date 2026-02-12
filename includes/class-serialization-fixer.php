@@ -99,6 +99,14 @@ class Serialization_Fixer {
             str_replace('http://', 'https://', $this->destination_url) . '/'
         );
 
+        // Sort search URLs longest-first to prevent partial matches
+        array_multisort(
+            array_map('strlen', $search_urls),
+            SORT_DESC,
+            $search_urls,
+            $replace_urls
+        );
+
         foreach ($this->tables_to_scan as $table) {
             $full_table = $wpdb->prefix . $table;
 
@@ -151,21 +159,38 @@ class Serialization_Fixer {
         // Get primary key
         $primary_key = $this->get_primary_key($table);
 
-        // Process rows in batches
-        $offset = 0;
+        // Process rows in batches using keyset pagination when possible
         $batch_size = 1000;
+        $last_pk_value = null;
+        $use_keyset = ($primary_key !== null);
 
         while (true) {
             // Get a batch of rows
-            $columns_str = implode(', ', array_merge(array($primary_key), $text_columns));
-            $rows = $wpdb->get_results(
-                $wpdb->prepare(
-                    "SELECT {$columns_str} FROM `{$table}` LIMIT %d, %d",
-                    $offset,
-                    $batch_size
-                ),
-                ARRAY_A
-            );
+            $select_columns = array_unique(array_merge(
+                $primary_key !== null ? array("`{$primary_key}`") : array(),
+                array_map(function($c) { return "`{$c}`"; }, $text_columns)
+            ));
+            $columns_str = implode(', ', $select_columns);
+
+            if ($use_keyset && $last_pk_value !== null) {
+                $rows = $wpdb->get_results(
+                    $wpdb->prepare(
+                        "SELECT {$columns_str} FROM `{$table}` WHERE `{$primary_key}` > %s ORDER BY `{$primary_key}` ASC LIMIT %d",
+                        $last_pk_value,
+                        $batch_size
+                    ),
+                    ARRAY_A
+                );
+            } else {
+                $order_clause = $use_keyset ? "ORDER BY `{$primary_key}` ASC" : '';
+                $rows = $wpdb->get_results(
+                    $wpdb->prepare(
+                        "SELECT {$columns_str} FROM `{$table}` {$order_clause} LIMIT %d",
+                        $batch_size
+                    ),
+                    ARRAY_A
+                );
+            }
 
             if (empty($rows)) {
                 break;
@@ -176,11 +201,15 @@ class Serialization_Fixer {
                 $this->stats['rows_processed']++;
             }
 
+            // Update keyset pagination cursor
+            if ($use_keyset && !empty($rows)) {
+                $last_row = end($rows);
+                $last_pk_value = $last_row[$primary_key];
+            }
+
             if (count($rows) < $batch_size) {
                 break;
             }
-
-            $offset += $batch_size;
 
             // Prevent timeout
             if (function_exists('set_time_limit')) {
@@ -234,12 +263,16 @@ class Serialization_Fixer {
 
         // Perform update if needed
         if ($update_needed) {
+            // Use correct format specifiers
+            $data_format = array_fill(0, count($update_data), '%s');
+            $pk_format = is_numeric($row[$primary_key]) ? '%d' : '%s';
+
             $result = $wpdb->update(
                 $table,
                 $update_data,
                 array($primary_key => $row[$primary_key]),
-                '%s',
-                '%d'
+                $data_format,
+                array($pk_format)
             );
 
             if ($result !== false) {
@@ -282,6 +315,10 @@ class Serialization_Fixer {
      */
     private function process_data_structure($data, $search_urls, $replace_urls) {
         if (is_string($data)) {
+            // Check if the string itself is serialized (nested serialization)
+            if ($this->is_serialized($data)) {
+                return $this->recursive_replace($data, $search_urls, $replace_urls);
+            }
             // Perform replacement
             return $this->simple_replace($data, $search_urls, $replace_urls);
         } elseif (is_array($data)) {
@@ -391,31 +428,13 @@ class Serialization_Fixer {
     /**
      * Get primary key column for table
      *
+     * Delegates to shared Database_Utils to avoid duplication.
+     *
      * @param string $table
-     * @return string
+     * @return string|null
      */
     private function get_primary_key($table) {
-        global $wpdb;
-
-        $result = $wpdb->get_row(
-            "SHOW KEYS FROM `{$table}` WHERE Key_name = 'PRIMARY'",
-            ARRAY_A
-        );
-
-        if ($result && isset($result['Column_name'])) {
-            return $result['Column_name'];
-        }
-
-        // Fallback: try to find an ID column
-        $columns = $wpdb->get_col("SHOW COLUMNS FROM `{$table}`");
-        foreach ($columns as $column) {
-            if (strtolower($column) === 'id') {
-                return 'id';
-            }
-        }
-
-        // Last resort: use first column
-        return $columns[0];
+        return Database_Utils::get_primary_key($table);
     }
 
     /**

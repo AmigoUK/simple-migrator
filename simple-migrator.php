@@ -27,7 +27,7 @@ if (!defined('ABSPATH')) {
 define('SM_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('SM_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('SM_PLUGIN_BASENAME', plugin_basename(__FILE__));
-define('SM_VERSION', '1.0.27');
+define('SM_VERSION', '1.0.29');
 define('SM_API_NAMESPACE', 'simple-migrator/v1');
 define('SM_CHUNK_SIZE', 2 * 1024 * 1024); // 2MB chunks
 
@@ -173,7 +173,11 @@ class Simple_Migrator {
      * Plugin deactivation
      */
     public function deactivate() {
-        // Cleanup if needed
+        // Clean up transients
+        delete_transient('sm_preserved_options');
+        delete_transient('sm_preserved_admin');
+        delete_transient('sm_migration_lock');
+
         flush_rewrite_rules();
     }
 
