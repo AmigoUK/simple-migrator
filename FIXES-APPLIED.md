@@ -1,3 +1,5 @@
+> **Historical document** — This report was written for v1.0.9. For current status, see [CHANGELOG.md](CHANGELOG.md).
+
 # Simple Migrator - Security Fixes Applied
 
 **Plugin Version:** 1.0.9

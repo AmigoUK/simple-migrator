@@ -203,8 +203,9 @@ simple-migrator/
 │       └── admin.css                # Admin styles
 ├── user-guide.md                    # Detailed user documentation
 ├── CHANGELOG.md                     # Version history
-├── FIXES-APPLIED.md                 # Security & bug fix log
-├── QA-REPORT.md                     # QA testing report
+├── ROADMAP.md                       # Planned features & milestones
+├── FIXES-APPLIED.md                 # Security & bug fix log (v1.0.9)
+├── QA-REPORT.md                     # QA testing report (v1.0.9)
 └── README.md                        # This file
 ```
 

@@ -4,27 +4,7 @@ A distributed, peer-to-peer WordPress migration plugin designed for reliable 1:1
 
 ## Features
 
-- **Bit-by-Bit Transfer** - Handles sites of any size by breaking data into manageable chunks
-- **Resume Capability** - Interrupted migrations can be resumed from where they left off
-- **Automatic Retry** - Built-in retry logic with exponential backoff handles network issues
-- **Zero Downtime** - Pull-based architecture keeps your site live during migration
-- **Table Prefix Translation** - Automatically handles different table prefixes (e.g., `wp_` to `prod_`)
-- **Serialization Safe** - Advanced search & replace preserves serialized PHP data
-- **Peer-to-Peer** - Direct server-to-server transfer, no cloud storage required
-- **Progress Tracking** - Real-time progress bars and detailed statistics
-- **Pause & Resume** - Control your migration with pause, resume, and cancel options
-- **Backup & Restore** - Full site backup before migration with one-click restore
-- **WP-CLI Support** - Emergency backup/restore from command line (no browser needed)
-- **Smart Merge Mode** - Preserves destination admin accounts, URLs, and settings during migration
-- **Session Preservation** - Current user stays authenticated throughout migration
-
-## Requirements
-
-- **WordPress**: 5.0 or higher
-- **PHP**: 7.4 or higher
-- **Memory**: 128MB minimum (256MB recommended)
-- **Permissions**: Ability to install plugins (Administrator access)
-- **Network**: Both source and destination servers must be accessible from each other
+For a complete feature list and system requirements, see [README.md](README.md).
 
 ## Installation
 
@@ -55,7 +35,7 @@ A distributed, peer-to-peer WordPress migration plugin designed for reliable 1:1
 2. Go to **Simple Migrator** in the WordPress admin menu
 3. Click **Source Mode**
 4. Copy the **Migration Key** that appears on the screen
-5. Keep this key secure - it allows access to your site data
+5. Keep this key secure — it allows access to your site data
 
 **Example Migration Key:**
 ```
@@ -267,9 +247,9 @@ This means you stay logged in throughout the migration and the destination site 
 
 The plugin automatically retries failed operations:
 
-- **Network errors**: Up to 5 retries
-- **Timeout errors**: Exponential backoff (1s, 2s, 4s, 8s, 16s)
-- **File transfer errors**: Up to 3 retries per chunk
+- **Network errors** — Up to 5 retries
+- **Timeout errors** — Exponential backoff (1s, 2s, 4s, 8s, 16s)
+- **File transfer errors** — Up to 3 retries per chunk
 - All errors are logged and displayed in statistics
 
 ## Troubleshooting
@@ -311,7 +291,7 @@ The plugin automatically retries failed operations:
 **Problem**: "Maximum execution time exceeded"
 
 **Solutions**:
-1. The plugin automatically retries - just wait
+1. The plugin automatically retries — just wait
 2. Increase PHP max_execution_time in php.ini
 3. Reduce batch size (edit SM_CHUNK_SIZE in plugin)
 4. Use Pause/Resume to continue
@@ -330,8 +310,8 @@ The plugin automatically retries failed operations:
 
 ### For Large Sites (1GB+)
 
-1. **Run during off-peak hours** - Less server load
-2. **Use Pause/Resume** - Break migration into sessions
+1. **Run during off-peak hours** — Less server load
+2. **Use Pause/Resume** — Break migration into sessions
 3. **Increase PHP limits**:
    ```php
    memory_limit = 256M
@@ -339,53 +319,53 @@ The plugin automatically retries failed operations:
    post_max_size = 8M
    upload_max_filesize = 8M
    ```
-4. **Monitor server resources** - Watch CPU and memory
-5. **Check statistics** - Review retry count and errors
+4. **Monitor server resources** — Watch CPU and memory
+5. **Check statistics** — Review retry count and errors
 
 ### For Slow Connections
 
-1. **Increase chunk size** - Edit SM_CHUNK_SIZE (default 2MB)
-2. **Use batch transfers** - Enabled by default for small files
-3. **Resume capability** - Don't worry about interruptions
-4. **Progress persistence** - State saved automatically
+1. **Increase chunk size** — Edit SM_CHUNK_SIZE (default 2MB)
+2. **Use batch transfers** — Enabled by default for small files
+3. **Resume capability** — Don't worry about interruptions
+4. **Progress persistence** — State saved automatically
 
 ## Security
 
 ### Authentication
 
-- **Secret key** - 64-character cryptographically secure random string
-- **Header-based** - Uses `X-Migration-Secret` header
-- **One-time use** - Regenerate key after migration
-- **Never expires** - Key valid until manually regenerated
+- **Secret key** — 64-character cryptographically secure random string
+- **Header-based** — Uses `X-Migration-Secret` header
+- **One-time use** — Regenerate key after migration
+- **Never expires** — Key valid until manually regenerated
 
 ### Data Protection
 
-- **HTTPS supported** - Encrypted transfer when using SSL
-- **Checksum verification** - MD5 checksums for all chunks
-- **Path validation** - Prevents directory traversal attacks with depth checking
-- **Capability checks** - Requires Administrator role
-- **Nonce verification** - WordPress nonces for all AJAX calls
-- **CORS whitelist** - Only allows requests from known origins
-- **SQL injection prevention** - Table name validation on all queries
-- **Session preservation** - Current user stays authenticated during migration
-- **Protected backups** - Backup directory secured with `.htaccess` deny
-- **Concurrent migration lock** - Prevents overlapping migrations
+- **HTTPS supported** — Encrypted transfer when using SSL
+- **Checksum verification** — MD5 checksums for all chunks
+- **Path validation** — Prevents directory traversal attacks with depth checking
+- **Capability checks** — Requires Administrator role
+- **Nonce verification** — WordPress nonces for all AJAX calls
+- **CORS whitelist** — Only allows requests from known origins
+- **SQL injection prevention** — Table name validation on all queries
+- **Session preservation** — Current user stays authenticated during migration
+- **Protected backups** — Backup directory secured with `.htaccess` deny
+- **Concurrent migration lock** — Prevents overlapping migrations
 
 ### Best Practices
 
 1. **Regenerate key** after each migration
 2. **Delete plugin** from both sites when done
 3. **Use HTTPS** for production migrations
-4. **Backup first** - Always have a recent backup
-5. **Test locally** - Try with staging sites first
+4. **Backup first** — Always have a recent backup
+5. **Test locally** — Try with staging sites first
 
 ## Limitations
 
-- **Server-to-server only** - Both sites must be online
-- **WordPress access** - Need admin access to both sites
-- **Network connectivity** - Servers must communicate directly
-- **Same WordPress version** - Best results with matching versions
-- **Plugin compatibility** - Both sites need the plugin version
+- **Server-to-server only** — Both sites must be online
+- **WordPress access** — Need admin access to both sites
+- **Network connectivity** — Servers must communicate directly
+- **Same WordPress version** — Best results with matching versions
+- **Plugin compatibility** — Both sites need the plugin version
 
 ## FAQ
 
@@ -430,13 +410,9 @@ See [CHANGELOG.md](CHANGELOG.md) for a complete version history and detailed cha
 
 ## Support
 
-- **Issues**: Report bugs at [GitHub Issues](https://github.com/AmigoUK/simple-migrator/issues)
-- **Documentation**: See inline documentation in code
-- **Security**: Report security issues privately
-
-## Credits
-
-Developed with ❤️ for the WordPress community. Built following WordPress coding standards and best practices.
+- **Issues** — Report bugs at [GitHub Issues](https://github.com/AmigoUK/simple-migrator/issues)
+- **Documentation** — See inline documentation in code
+- **Security** — Report security issues privately
 
 ## License
 

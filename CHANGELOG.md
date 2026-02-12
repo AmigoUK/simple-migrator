@@ -2,7 +2,7 @@
 
 All notable changes to Simple Migrator will be documented in this file.
 
-## [1.0.29] - 2025-12-31
+## [1.0.29] - 2026-02-12
 ### Fixed - Comprehensive Security Hardening (116 issues)
 
 **Security (Critical):**
@@ -47,7 +47,7 @@ All notable changes to Simple Migrator will be documented in this file.
 - Added deactivation cleanup for transients
 - Added `uninstall.php` for proper plugin data cleanup on deletion
 
-### Fixed - Restore Stuck
+### Fixed - Restore Stuck (2025-12-31)
 - Pre-process SQL file to remove multi-line mysqldump warnings
 - Properly filter out warning blocks that span multiple lines
 - Exclude `.git`, `.svn`, `.hg`, `node_modules`, IDE folders, and OS junk from backups
@@ -67,7 +67,7 @@ All notable changes to Simple Migrator will be documented in this file.
 
 ---
 
-## [1.0.27] - 2025-01-31
+## [1.0.27] - 2025-12-31
 ### Added - WP-CLI Integration
 - **Emergency Recovery:** Restore backups when site is broken/inaccessible
 - **New WP-CLI commands:**
@@ -87,21 +87,11 @@ All notable changes to Simple Migrator will be documented in this file.
 - `delete_backup($id)` - Delete a backup
 - `get_backup_dir()` - Get backup directory path
 
-### Usage Example
-```bash
-# SSH into server and navigate to WordPress
-cd /var/www/html/your-site
-
-# List backups
-wp sm backup list
-
-# Restore latest (even when site is broken)
-wp sm backup restore backup-2025-12-31-192822 --yes
-```
+See [user-guide.md](user-guide.md) for full WP-CLI usage examples.
 
 ---
 
-## [1.0.26] - 2025-01-31
+## [1.0.26] - 2025-12-31
 ### Fixed - Backup Restore SQL Parsing Error
 - **Critical fix:** Backup restore now correctly handles mysqldump output
 - **backup_database():** Redirect stderr to /dev/null (`2>/dev/null`) instead of including in SQL file
@@ -118,7 +108,7 @@ wp sm backup restore backup-2025-12-31-192822 --yes
 
 ---
 
-## [1.0.25] - 2025-01-31
+## [1.0.25] - 2025-12-31
 ### Fixed - Session Loss During Migration
 - **Critical fix:** WordPress session no longer breaks during migration
 - **wp_users handling:** Delete all users EXCEPT current user (keeps session alive)
@@ -139,7 +129,7 @@ wp sm backup restore backup-2025-12-31-192822 --yes
 
 ---
 
-## [1.0.24] - 2025-01-31
+## [1.0.24] - 2025-12-31
 ### Fixed - Smart Merge Mode
 - **Critical fix:** WordPress no longer goes into install mode during migration
 - **Protected wp_users and wp_usermeta tables** - Destination admin account is now preserved
@@ -163,7 +153,7 @@ wp sm backup restore backup-2025-12-31-192822 --yes
 
 ---
 
-## [1.0.23] - 2025-01-31
+## [1.0.23] - 2025-12-31
 ### Fixed
 - **Critical CORS bug** - REST_Controller was never instantiated early enough
 - `handle_cors()` hook to `init` (priority 5) was never registered
@@ -177,7 +167,7 @@ wp sm backup restore backup-2025-12-31-192822 --yes
 
 ---
 
-## [1.0.20] - 2025-01-31
+## [1.0.20] - 2025-12-31
 ### Fixed
 - **Critical PHP fatal error** - `Call to undefined function Simple_Migrator\escshellcmd()`
 - Used incorrect function names:
@@ -193,7 +183,7 @@ wp sm backup restore backup-2025-12-31-192822 --yes
 
 ---
 
-## [1.0.19] - 2025-01-31
+## [1.0.19] - 2025-12-31
 ### Added
 - Comprehensive error logging to diagnose backup failures
 - Log all backup phases to WordPress debug log
@@ -206,7 +196,7 @@ wp sm backup restore backup-2025-12-31-192822 --yes
 
 ---
 
-## [1.0.18] - 2025-01-31
+## [1.0.18] - 2025-12-31
 ### Fixed
 - **Improved output buffering handling** - now clears ALL buffer levels
 - Added `Content-Type` and `X-Accel-Buffering: no` headers
@@ -227,7 +217,7 @@ wp sm backup restore backup-2025-12-31-192822 --yes
 
 ---
 
-## [1.0.17] - 2025-01-31
+## [1.0.17] - 2025-12-31
 ### Fixed
 - **"No response from server" error** in backup creation
 - Changed from `wp_send_json_success()` to manual JSON encoding for streaming
@@ -244,7 +234,7 @@ wp sm backup restore backup-2025-12-31-192822 --yes
 
 ---
 
-## [1.0.16] - 2025-01-31
+## [1.0.16] - 2025-12-31
 ### Fixed
 - **Critical nonce mismatch bug** in Backup_Manager (was checking 'sm_nonce' instead of 'wp_rest')
 - Backup list now loads correctly instead of showing "Loading backups..." indefinitely
@@ -269,7 +259,7 @@ wp sm backup restore backup-2025-12-31-192822 --yes
 
 ---
 
-## [1.0.15] - 2025-01-31
+## [1.0.15] - 2025-12-31
 ### Fixed
 - **PHP Fatal error**: Class "Simple_Migrator\WP_Error" not found
 - Added leading backslash to all 19 WP_Error references in Backup_Manager
@@ -277,7 +267,7 @@ wp sm backup restore backup-2025-12-31-192822 --yes
 
 ---
 
-## [1.0.14] - 2025-01-31
+## [1.0.14] - 2025-12-31
 ### Fixed
 - **JavaScript syntax error** preventing all functionality
 - Removed PHP translation functions from JavaScript files
@@ -286,7 +276,7 @@ wp sm backup restore backup-2025-12-31-192822 --yes
 
 ---
 
-## [1.0.13] - 2025-01-31
+## [1.0.13] - 2025-12-31
 ### Fixed
 - Mode switching now works correctly (Source/Destination buttons)
 - Mode selector is now hidden after selection
@@ -295,7 +285,7 @@ wp sm backup restore backup-2025-12-31-192822 --yes
 
 ---
 
-## [1.0.12] - 2025-01-31
+## [1.0.12] - 2025-12-31
 ### Added
 - **Full backup/restore system** for development safety
 - Database backup (mysqldump with PHP fallback)
@@ -312,7 +302,7 @@ wp sm backup restore backup-2025-12-31-192822 --yes
 
 ---
 
-## [1.0.11] - 2025-01-31
+## [1.0.11] - 2025-12-31
 ### Added
 - **Development key saving** feature for destination mode
 - Checkbox to save migration key in database (development only)
@@ -322,14 +312,14 @@ wp sm backup restore backup-2025-12-31-192822 --yes
 
 ---
 
-## [1.0.10] - 2025-01-31
+## [1.0.10] - 2025-12-31
 ### Changed
 - Migration key regeneration now reloads page to show new key
 - Improved UX for key regeneration workflow
 
 ---
 
-## [1.0.9] - 2025-01-31
+## [1.0.9] - 2025-12-31
 ### Added
 - Production-ready release
 - Comprehensive QA review completed
