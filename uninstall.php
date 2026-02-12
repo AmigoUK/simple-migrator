@@ -20,6 +20,7 @@ $options_to_delete = array(
     'sm_dev_saved_source_key',
     'sm_connected_sources',
     'sm_connected_destinations',
+    'sm_settings',
 );
 
 foreach ($options_to_delete as $option) {

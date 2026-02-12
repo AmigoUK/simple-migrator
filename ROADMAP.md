@@ -2,13 +2,13 @@
 
 This document outlines planned improvements for Simple Migrator. Versions are grouped by theme — each milestone builds on the previous one, moving from configuration to polish to new features to automation.
 
-## v1.1.0 — Settings & Configurability
+## v1.1.0 — Settings & Configurability ✅
 
-_Currently, all operational parameters (chunk size, batch size, retry counts) are hardcoded constants. This release exposes them to administrators so the plugin can be tuned for different hosting environments without editing code._
+_Released. All operational parameters are now configurable via an admin settings page and developer filter hooks._
 
-- **Admin settings page** — Configure chunk size, batch size, backup retention count, and max retries from the WordPress admin
-- **WordPress filter hooks** — Allow themes/plugins to customize file exclusion patterns and protected tables/options via `apply_filters()`
-- **Configurable migration lock timeout** — Adjust the concurrent-migration lock duration for slow servers or large migrations
+- ~~**Admin settings page** — Configure chunk size, batch size, backup retention count, and max retries from the WordPress admin~~
+- ~~**WordPress filter hooks** — Allow themes/plugins to customize file exclusion patterns and protected tables/options via `apply_filters()`~~
+- ~~**Configurable migration lock timeout** — Adjust the concurrent-migration lock duration for slow servers or large migrations~~
 
 ## v1.2.0 — UX Polish
 

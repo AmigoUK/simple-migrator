@@ -160,7 +160,7 @@ class Serialization_Fixer {
         $primary_key = $this->get_primary_key($table);
 
         // Process rows in batches using keyset pagination when possible
-        $batch_size = 1000;
+        $batch_size = Settings::get_instance()->get('batch_size');
         $last_pk_value = null;
         $use_keyset = ($primary_key !== null);
 

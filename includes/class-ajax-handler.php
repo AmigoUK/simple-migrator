@@ -291,7 +291,7 @@ class AJAX_Handler {
             wp_send_json_error(__('Another migration is already in progress.', 'simple-migrator'));
             return;
         }
-        set_transient('sm_migration_lock', get_current_user_id(), 30 * MINUTE_IN_SECONDS);
+        set_transient('sm_migration_lock', get_current_user_id(), Settings::get_instance()->get('lock_timeout'));
 
         // Get parameters using unified input method
         $overwrite = $this->get_input('overwrite');
@@ -342,39 +342,43 @@ class AJAX_Handler {
 
                 if ($table_exists) {
                     $table_base = str_replace($wpdb->prefix, '', $table_name);
+                    $protected_tables = Settings::get_instance()->get('protected_tables');
 
-                    // Handle wp_users specially - delete all EXCEPT current user
-                    if ($table_base === 'users') {
-                        if ($current_user_id && $current_user_login) {
-                            // Delete all users except current one
-                            $deleted = $wpdb->query($wpdb->prepare(
-                                "DELETE FROM `{$table_name}` WHERE ID != %d",
-                                $current_user_id
-                            ));
-                            if ($deleted !== false) {
-                                $preserved[] = $table_name . ' (current user preserved)';
+                    if (in_array($table_base, $protected_tables, true)) {
+                        // Handle wp_users specially - delete all EXCEPT current user
+                        if ($table_base === 'users') {
+                            if ($current_user_id && $current_user_login) {
+                                $deleted = $wpdb->query($wpdb->prepare(
+                                    "DELETE FROM `{$table_name}` WHERE ID != %d",
+                                    $current_user_id
+                                ));
+                                if ($deleted !== false) {
+                                    $preserved[] = $table_name . ' (current user preserved)';
+                                }
+                            } else {
+                                $wpdb->query("TRUNCATE TABLE `{$table_name}`");
+                                $preserved[] = $table_name . ' (truncated)';
                             }
-                        } else {
-                            // No current user, truncate entirely
-                            $wpdb->query("TRUNCATE TABLE `{$table_name}`");
-                            $preserved[] = $table_name . ' (truncated)';
                         }
-                    }
-                    // Handle wp_usermeta specially - delete all EXCEPT current user's meta
-                    elseif ($table_base === 'usermeta') {
-                        if ($current_user_id) {
-                            // Delete all usermeta except for current user
-                            $deleted = $wpdb->query($wpdb->prepare(
-                                "DELETE FROM `{$table_name}` WHERE user_id != %d",
-                                $current_user_id
-                            ));
-                            if ($deleted !== false) {
-                                $preserved[] = $table_name . ' (current user meta preserved)';
+                        // Handle wp_usermeta specially - delete all EXCEPT current user's meta
+                        elseif ($table_base === 'usermeta') {
+                            if ($current_user_id) {
+                                $deleted = $wpdb->query($wpdb->prepare(
+                                    "DELETE FROM `{$table_name}` WHERE user_id != %d",
+                                    $current_user_id
+                                ));
+                                if ($deleted !== false) {
+                                    $preserved[] = $table_name . ' (current user meta preserved)';
+                                }
+                            } else {
+                                $wpdb->query("TRUNCATE TABLE `{$table_name}`");
+                                $preserved[] = $table_name . ' (truncated)';
                             }
-                        } else {
-                            // No current user, truncate entirely
+                        }
+                        // Any other protected table — truncate (preserve structure, clear data)
+                        else {
                             $wpdb->query("TRUNCATE TABLE `{$table_name}`");
-                            $preserved[] = $table_name . ' (truncated)';
+                            $preserved[] = $table_name . ' (protected, truncated)';
                         }
                     }
                     // Skip wp_options entirely - it will be overwritten during migration
@@ -411,7 +415,7 @@ class AJAX_Handler {
     private function preserve_critical_options() {
         global $wpdb;
 
-        $protected_options = json_decode(SM_PROTECTED_OPTIONS, true);
+        $protected_options = Settings::get_instance()->get('protected_options');
         $preserved = array();
 
         foreach ($protected_options as $option) {

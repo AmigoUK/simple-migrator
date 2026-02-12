@@ -9,6 +9,8 @@
 
 namespace Simple_Migrator\Admin;
 
+use Simple_Migrator\Settings;
+
 class Admin_Page {
 
     /**
@@ -51,14 +53,24 @@ class Admin_Page {
             'dashicons-migrate',
             30
         );
+
+        $settings_page = Settings_Page::get_instance();
+        add_submenu_page(
+            'simple-migrator',
+            __('Settings', 'simple-migrator'),
+            __('Settings', 'simple-migrator'),
+            'manage_options',
+            'simple-migrator-settings',
+            array($settings_page, 'render_page')
+        );
     }
 
     /**
      * Enqueue scripts and styles
      */
     public function enqueue_scripts($hook) {
-        // Only load on our admin page
-        if ('toplevel_page_simple-migrator' !== $hook) {
+        // Only load on our admin pages
+        if ('toplevel_page_simple-migrator' !== $hook && 'simple-migrator_page_simple-migrator-settings' !== $hook) {
             return;
         }
 
@@ -80,12 +92,18 @@ class Admin_Page {
         );
 
         // Localize script
+        $sm_settings = Settings::get_instance();
         wp_localize_script('sm-admin-js', 'smData', array(
             'apiUrl'       => rest_url(SM_API_NAMESPACE),
             'nonce'        => wp_create_nonce('sm_admin_nonce'),
             'pluginUrl'    => SM_PLUGIN_URL,
             'ajaxUrl'      => admin_url('admin-ajax.php'),
             'homeUrl'      => home_url(),
+            'settings'     => array(
+                'chunkSize'  => $sm_settings->get('chunk_size'),
+                'batchSize'  => $sm_settings->get('batch_size'),
+                'maxRetries' => $sm_settings->get('max_retries'),
+            ),
             'strings'      => array(
                 'connectionSuccess' => __('Connection successful!', 'simple-migrator'),
                 'connectionFailed'  => __('Connection failed.', 'simple-migrator'),

@@ -2,6 +2,35 @@
 
 All notable changes to Simple Migrator will be documented in this file.
 
+## [1.1.0] - 2026-02-12
+### Added
+- **Admin settings page** (Simple Migrator > Settings) with 5 configurable parameters:
+  - Chunk size (0.5–10 MB) — file transfer chunk size
+  - Batch size (100–5000 rows) — database rows per request
+  - Max retries (1–10) — retry attempts for failed requests
+  - Backup retention (1–10) — maximum backups to keep
+  - Lock timeout (5–120 min) — migration lock expiry duration
+- **Filter hooks** for developer customization via `apply_filters('sm_setting_{key}')`:
+  - `sm_setting_protected_tables` — modify protected tables list
+  - `sm_setting_protected_options` — modify protected options list
+  - `sm_setting_exclude_files` — modify file exclusion list
+  - `sm_setting_exclude_dirs` — modify directory exclusion list
+  - `sm_setting_exclude_extensions` — modify extension exclusion list
+  - `sm_setting_backup_exclude_patterns` — modify backup regex patterns
+- **Settings class** (`Simple_Migrator\Settings`) — centralized singleton for all configurable values with validation and defaults
+- **Settings page class** (`Simple_Migrator\Admin\Settings_Page`) — AJAX save/reset with WordPress admin UI
+- Zero-migration upgrade: existing installs get defaults automatically via `wp_parse_args()`
+
+### Fixed
+- **Protected tables bug** — `SM_PROTECTED_TABLES` constant was defined but never consumed; `prepare_database()` hardcoded `users`/`usermeta` checks. Now uses `Settings::get('protected_tables')` with `in_array()`, and any table added to the protected list via filter hooks is properly handled.
+
+### Changed
+- All hardcoded constants (chunk size, batch size, max retries, max backups, lock timeout, exclusion lists) now read from Settings class
+- JavaScript constants read from `smData.settings` with fallback to hardcoded defaults
+- Version bumped to 1.1.0
+
+---
+
 ## [1.0.29] - 2026-02-12
 ### Fixed - Comprehensive Security Hardening (116 issues)
 

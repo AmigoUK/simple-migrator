@@ -17,38 +17,40 @@ class File_Scanner {
      *
      * @var array
      */
-    private $exclude_files = array(
-        '.git',
-        '.svn',
-        '.hg',
-        'node_modules',
-        'bower_components',
-        '.DS_Store',
-        'Thumbs.db',
-        '.env',
-        '.htaccess',
-        'debug.log',
-    );
+    private $exclude_files = array();
 
     /**
      * Directories to exclude from migration
      *
      * @var array
      */
-    private $exclude_dirs = array(
-        'cache',
-        'sm-backups',
-        'upgrade',
-        'simple-migrator',  // Prevent overwriting destination plugin
-    );
+    private $exclude_dirs = array();
 
     /**
-     * Maximum file size for batch processing (2MB)
+     * File extensions to exclude
+     *
+     * @var array
+     */
+    private $exclude_extensions = array();
+
+    /**
+     * Maximum file size for batch processing
      * Files larger than this will be transferred in chunks
      *
      * @var int
      */
-    private $batch_threshold = 2097152; // 2MB in bytes
+    private $batch_threshold;
+
+    /**
+     * Constructor — loads exclusion lists from Settings
+     */
+    public function __construct() {
+        $settings = Settings::get_instance();
+        $this->exclude_files      = $settings->get('exclude_files');
+        $this->exclude_dirs       = $settings->get('exclude_dirs');
+        $this->exclude_extensions = $settings->get('exclude_extensions');
+        $this->batch_threshold    = $settings->get('chunk_size');
+    }
 
     /**
      * Scan wp-content directory and generate manifest
@@ -171,9 +173,8 @@ class File_Scanner {
 
         // Check file extensions
         $extension = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
-        $exclude_extensions = array('log', 'tmp', 'bak', 'swp', 'swo');
 
-        if (in_array($extension, $exclude_extensions)) {
+        if (in_array($extension, $this->exclude_extensions)) {
             return true;
         }
 

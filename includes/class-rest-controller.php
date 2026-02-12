@@ -497,7 +497,7 @@ class REST_Controller extends WP_REST_Controller {
         $manifest['total_chunks'] = 0;
 
         foreach ($large_files as $file) {
-            $chunks = $scanner->calculate_chunks($file['size'], SM_CHUNK_SIZE);
+            $chunks = $scanner->calculate_chunks($file['size'], Settings::get_instance()->get('chunk_size'));
             $manifest['total_chunks'] += $chunks;
         }
 
@@ -576,7 +576,7 @@ class REST_Controller extends WP_REST_Controller {
         }
 
         $file_size = filesize($full_path);
-        $chunk_size = $end > 0 ? ($end - $start) : SM_CHUNK_SIZE;
+        $chunk_size = $end > 0 ? ($end - $start) : Settings::get_instance()->get('chunk_size');
 
         // Open file
         $handle = fopen($full_path, 'rb');

@@ -399,3 +399,50 @@
     border-radius: 4px;
     color: #666;
 }
+
+/* Settings Page */
+.sm-settings-form {
+    margin-top: 20px;
+}
+
+.sm-settings-field {
+    margin-bottom: 20px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid #f0f0f0;
+}
+
+.sm-settings-field:last-of-type {
+    border-bottom: none;
+}
+
+.sm-settings-field label {
+    display: block;
+    font-weight: 600;
+    margin-bottom: 6px;
+    font-size: 14px;
+}
+
+.sm-settings-unit {
+    font-weight: 400;
+    color: #666;
+    font-size: 13px;
+}
+
+.sm-settings-field input[type="number"] {
+    width: 120px;
+    padding: 6px 10px;
+    font-size: 14px;
+}
+
+.sm-settings-field .description {
+    margin-top: 6px;
+    color: #666;
+}
+
+.sm-settings-actions {
+    margin-top: 25px;
+    padding-top: 20px;
+    border-top: 1px solid #eee;
+    display: flex;
+    gap: 10px;
+}

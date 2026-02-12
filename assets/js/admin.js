@@ -12,9 +12,9 @@
 /**
  * Constants
  */
-const SM_CHUNK_SIZE = 2 * 1024 * 1024; // 2MB
-const SM_BATCH_SIZE = 1000;
-const SM_MAX_RETRIES = 5;
+const SM_CHUNK_SIZE = (typeof smData !== 'undefined' && smData.settings) ? smData.settings.chunkSize : 2 * 1024 * 1024;
+const SM_BATCH_SIZE = (typeof smData !== 'undefined' && smData.settings) ? smData.settings.batchSize : 1000;
+const SM_MAX_RETRIES = (typeof smData !== 'undefined' && smData.settings) ? smData.settings.maxRetries : 5;
 const SM_PAUSE_CHECK_INTERVAL = 100; // ms
 
 /**

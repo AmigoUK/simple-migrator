@@ -30,7 +30,7 @@ class Backup_Manager {
      *
      * @var int
      */
-    private $max_backups = 3;
+    private $max_backups;
 
     /**
      * Get instance
@@ -48,6 +48,8 @@ class Backup_Manager {
      * Constructor
      */
     private function __construct() {
+        $this->max_backups = Settings::get_instance()->get('max_backups');
+
         // Set backup directory
         $upload_dir = wp_upload_dir();
         $this->backup_dir = $upload_dir['basedir'] . '/sm-backups/';
@@ -370,22 +372,8 @@ class Backup_Manager {
      * @param callable $progress_callback Optional progress callback
      */
     private function add_files_to_zip($zip, $base_dir, $strip_length, $progress_callback = null) {
-        // Directories and files to exclude from backup
-        $exclude_patterns = array(
-            '/\.git$/',           // Git repository
-            '/\.svn$/',           // SVN repository
-            '/\.hg$/',            // Mercurial repository
-            '/\.sass-cache$/',    // Sass cache
-            '/node_modules$/',    // Node modules
-            '/\.npm$/',           // NPM cache
-            '/\.bower$/',         // Bower cache
-            '/vendor\/bower\/',   // Bower components in vendor
-            '/\.idea$/',          // JetBrains IDE
-            '/\.vscode$/',        // VS Code
-            '/\.DS_Store$/',      // macOS files
-            '/Thumbs\.db$/',      // Windows thumbnails
-            '/\.log$/',           // Log files
-        );
+        // Directories and files to exclude from backup (loaded from Settings)
+        $exclude_patterns = Settings::get_instance()->get('backup_exclude_patterns');
 
         // Check if a path should be excluded
         $should_exclude = function($path) use ($exclude_patterns) {

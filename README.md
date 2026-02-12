@@ -1,6 +1,6 @@
 # Simple Migrator
 
-[![Version](https://img.shields.io/badge/Version-1.0.29-orange.svg)](https://github.com/AmigoUK/simple-migrator)
+[![Version](https://img.shields.io/badge/Version-1.1.0-orange.svg)](https://github.com/AmigoUK/simple-migrator)
 [![License: GPL v2](https://img.shields.io/badge/License-GPL%20v2-blue.svg)](https://www.gnu.org/licenses/gpl-2.0.html)
 [![WordPress Version](https://img.shields.io/badge/WordPress-5.0%2B-brightgreen.svg)](https://wordpress.org/)
 [![PHP Version](https://img.shields.io/badge/PHP-7.4%2B-purple.svg)](https://php.net/)
@@ -94,7 +94,7 @@ The destination server pulls data from the source server via REST API.
 
 1. **Scan** — File manifest & database discovery
 2. **Database Transfer** — Schema creation & batch row insertion
-3. **File Transfer** — Chunked streaming (2MB chunks)
+3. **File Transfer** — Chunked streaming (configurable, default 2MB)
 4. **Finalize** — Serialization-safe search & replace
 
 ### Smart Merge Mode
@@ -110,6 +110,38 @@ During migration, Smart Merge Mode protects critical destination data so the sit
 - `admin_email` — Destination admin email
 - `active_plugins`, `current_theme`, `template`, `stylesheet` — Active theme/plugins
 - `sm_migration_secret`, `sm_source_url`, `sm_source_mode` — Plugin state
+
+## Settings
+
+Navigate to **Simple Migrator > Settings** in WordPress admin to configure:
+
+| Setting | Range | Default | Description |
+|---------|-------|---------|-------------|
+| Chunk Size | 0.5 – 10 MB | 2 MB | File transfer chunk size |
+| Batch Size | 100 – 5000 rows | 1000 | Database rows per request |
+| Max Retries | 1 – 10 | 5 | Retry attempts for failed requests |
+| Backup Retention | 1 – 10 | 3 | Maximum backups to keep |
+| Lock Timeout | 5 – 120 min | 30 min | Migration lock expiry |
+
+### Filter Hooks
+
+Developers can customize additional parameters via PHP filters (no UI). Add filters in your theme's `functions.php` or a custom plugin:
+
+```php
+// Add a custom directory to exclude from file scanning
+add_filter('sm_setting_exclude_dirs', function($dirs) {
+    $dirs[] = 'custom-cache';
+    return $dirs;
+});
+
+// Protect an additional table during migration
+add_filter('sm_setting_protected_tables', function($tables) {
+    $tables[] = 'custom_data';
+    return $tables;
+});
+```
+
+Available filters: `sm_setting_protected_tables`, `sm_setting_protected_options`, `sm_setting_exclude_files`, `sm_setting_exclude_dirs`, `sm_setting_exclude_extensions`, `sm_setting_backup_exclude_patterns`. All UI settings are also filterable via `sm_setting_{key}`.
 
 ## Security Features
 
@@ -174,6 +206,10 @@ GET  /wp-json/simple-migrator/v1/config/info
 - `sm_flush_permalinks` — Flush WordPress permalinks
 - `sm_finalize_migration` — Complete migration and restore protected options
 
+**Settings:**
+- `sm_save_settings` — Save plugin settings
+- `sm_reset_settings` — Reset settings to defaults
+
 **Backup operations:**
 - `sm_create_backup` — Create full site backup
 - `sm_restore_backup` — Restore from backup
@@ -187,6 +223,7 @@ simple-migrator/
 ├── simple-migrator.php              # Main plugin file & constants
 ├── uninstall.php                    # Clean uninstall handler
 ├── includes/
+│   ├── class-settings.php           # Central settings management
 │   ├── class-rest-controller.php    # REST API endpoints (source)
 │   ├── class-ajax-handler.php       # AJAX handlers (destination)
 │   ├── class-serialization-fixer.php # Serialized data search & replace
@@ -195,7 +232,8 @@ simple-migrator/
 │   ├── class-database-utils.php     # Database helper utilities
 │   └── class-wp-cli-commands.php    # WP-CLI command definitions
 ├── includes/admin/
-│   └── class-admin-page.php         # Admin UI renderer
+│   ├── class-admin-page.php         # Admin UI renderer
+│   └── class-settings-page.php     # Settings page UI
 ├── assets/
 │   ├── js/
 │   │   └── admin.js                 # Frontend migration controller
