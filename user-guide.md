@@ -13,6 +13,10 @@ A distributed, peer-to-peer WordPress migration plugin designed for reliable 1:1
 - **Peer-to-Peer** - Direct server-to-server transfer, no cloud storage required
 - **Progress Tracking** - Real-time progress bars and detailed statistics
 - **Pause & Resume** - Control your migration with pause, resume, and cancel options
+- **Backup & Restore** - Full site backup before migration with one-click restore
+- **WP-CLI Support** - Emergency backup/restore from command line (no browser needed)
+- **Smart Merge Mode** - Preserves destination admin accounts, URLs, and settings during migration
+- **Session Preservation** - Current user stays authenticated throughout migration
 
 ## Requirements
 
@@ -84,7 +88,7 @@ If successful, you'll see:
 - Counts database rows
 
 #### Phase 2: Database Transfer
-- Drops existing tables (with your confirmation)
+- Drops existing tables (Smart Merge Mode preserves `users` and `usermeta`)
 - Creates new tables with correct schema
 - Transfers data in batches of 1000 rows
 - Progress updates for each table
@@ -98,7 +102,7 @@ If successful, you'll see:
 #### Phase 4: Finalize
 - Performs search & replace (old URL → new URL)
 - Preserves serialized data integrity
-- Updates site URL and home URL
+- Restores protected options (siteurl, home, admin_email, active plugins, theme)
 - Flushes permalinks
 
 ### Step 4: Complete
@@ -145,11 +149,12 @@ The plugin remembers:
 ## What Gets Migrated
 
 ### Database
-- All WordPress tables (posts, pages, users, comments, etc.)
+- All WordPress tables (posts, pages, comments, etc.)
 - Custom post types
 - Taxonomies and terms
 - Options and settings
 - Plugin and theme data
+- **Note:** Smart Merge Mode preserves destination `users`/`usermeta` tables and critical options
 
 ### Files
 - Plugins
@@ -165,6 +170,57 @@ The plugin remembers:
 - `.svn/`
 - Backup directories
 - Log files
+
+## Backup & Restore
+
+Simple Migrator includes a full backup system so you can safely roll back after a migration.
+
+### Creating a Backup
+
+1. Go to **Simple Migrator** in WordPress admin
+2. Click **Create Backup** in the Backup panel
+3. Watch the real-time progress with time estimates
+4. Backup includes both database and files
+
+### Restoring a Backup
+
+1. Select a backup from the list
+2. Click **Restore**
+3. Confirm the restore operation
+4. The site will be rolled back to the backup state
+
+### Backup Notes
+
+- **Automatic cleanup** — maximum of 3 backups kept to save disk space
+- **Protected storage** — backup directory secured with `.htaccess` (deny all)
+- Backups are stored in `wp-content/uploads/sm-backups/`
+
+### WP-CLI Commands
+
+For emergency recovery (when the WordPress admin is inaccessible) or scripted workflows:
+
+```bash
+# SSH into your server
+cd /var/www/html/your-site
+
+# List all backups
+wp sm backup list
+
+# Create a new backup
+wp sm backup create --progress
+
+# Restore a backup (even when site is broken)
+wp sm backup restore backup-2025-12-31-192822 --yes
+
+# Restore only database (skip files)
+wp sm backup restore backup-2025-12-31-192822 --yes --skip-files
+
+# Delete a specific backup
+wp sm backup delete backup-2025-12-31-192822 --yes
+
+# Clean up old backups, keeping the 3 most recent
+wp sm backup clean --keep=3
+```
 
 ## Advanced Features
 
@@ -190,6 +246,22 @@ This prevents:
 - Broken widgets
 - Missing theme options
 - Plugin settings corruption
+
+### Smart Merge Mode
+
+During migration, Smart Merge Mode automatically protects critical destination data:
+
+**Protected tables** (preserved instead of overwritten):
+- `users` — Your destination admin accounts stay intact
+- `usermeta` — User capabilities and roles preserved
+
+**Protected options** (restored after migration completes):
+- `siteurl`, `home` — Destination URLs
+- `admin_email` — Destination admin email
+- `active_plugins`, `current_theme`, `template`, `stylesheet` — Active theme/plugins
+- Plugin state (`sm_migration_secret`, `sm_source_url`, `sm_source_mode`)
+
+This means you stay logged in throughout the migration and the destination site retains its identity.
 
 ### Error Handling & Retry Logic
 
@@ -290,9 +362,14 @@ The plugin automatically retries failed operations:
 
 - **HTTPS supported** - Encrypted transfer when using SSL
 - **Checksum verification** - MD5 checksums for all chunks
-- **Path validation** - Prevents directory traversal attacks
+- **Path validation** - Prevents directory traversal attacks with depth checking
 - **Capability checks** - Requires Administrator role
 - **Nonce verification** - WordPress nonces for all AJAX calls
+- **CORS whitelist** - Only allows requests from known origins
+- **SQL injection prevention** - Table name validation on all queries
+- **Session preservation** - Current user stays authenticated during migration
+- **Protected backups** - Backup directory secured with `.htaccess` deny
+- **Concurrent migration lock** - Prevents overlapping migrations
 
 ### Best Practices
 
@@ -349,19 +426,11 @@ The plugin automatically retries failed operations:
 
 ## Changelog
 
-### 1.0.0
-- Initial release
-- Bit-by-bit file and database transfer
-- Resume capability
-- Retry logic with exponential backoff
-- Table prefix translation
-- Serialization-safe search & replace
-- Progress persistence
-- Pause/Resume/Cancel controls
+See [CHANGELOG.md](CHANGELOG.md) for a complete version history and detailed changes.
 
 ## Support
 
-- **Issues**: Report bugs at [GitHub Issues](https://github.com/your-repo/simple-migrator/issues)
+- **Issues**: Report bugs at [GitHub Issues](https://github.com/AmigoUK/simple-migrator/issues)
 - **Documentation**: See inline documentation in code
 - **Security**: Report security issues privately
 

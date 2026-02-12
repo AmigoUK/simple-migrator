@@ -2,6 +2,71 @@
 
 All notable changes to Simple Migrator will be documented in this file.
 
+## [1.0.29] - 2025-12-31
+### Fixed - Comprehensive Security Hardening (116 issues)
+
+**Security (Critical):**
+- SQL injection via unvalidated column names in `process_rows`
+- Path traversal TOCTOU in `write_chunk` and `extract_batch`
+- Command injection in mysqldump via `escapeshellcmd` misuse
+- XSS in admin.js (8 instances of unescaped `.html()` calls)
+- ZIP extraction path traversal with depth tracking
+- Arbitrary SQL execution in backup restore (added statement whitelist)
+- Backup delete/restore path traversal (validate backup_id format)
+- Migration secret logging removed from browser console
+
+**Security (High):**
+- CORS policy: removed `.dev` TLD and digit-stripped hostname matching
+- Prototype pollution via `Object.assign` in MigrationState
+- Added `X-WP-Nonce` CSRF headers to `fetch()` calls
+- Added concurrent migration lock via transients
+- Removed sensitive info exposure (admin_email, php_version, active_plugins)
+- Fixed DOS via unbounded batch request (limit to 100 files)
+- Fixed memory exhaustion with batched LIMIT/OFFSET queries
+
+**Bug Fixes:**
+- Transaction rollback dead code (namespace Exception catch)
+- Double REST route and AJAX handler registration
+- Operator precedence bug in path validation
+- `check_migration_permission` TypeError on missing option
+- Undefined `$result` variable and `$wpdb->show_errors` leak
+- Wrong backup path (`uploads/simple-migrator` → `uploads/sm-backups`)
+- Division by zero in progress calculation and `add_files_to_zip`
+- Pause/resume race condition in migration state
+- Error swallowing in createBackup stream processing
+- Nonce action mismatch (`wp_rest` → `sm_admin_nonce`)
+- `home_url('|')` generating wrong URL format
+- Version constant mismatch (1.0.27 → 1.0.29)
+
+**Architecture:**
+- Added shared `Database_Utils::get_primary_key()` to deduplicate logic
+- Replace OFFSET pagination with keyset pagination in serialization fixer
+- Added nested serialized data handling
+- Added multisite guard to prevent usage on multisite installations
+- Added streaming SQL reader for memory-efficient backup restore
+- Added deactivation cleanup for transients
+- Added `uninstall.php` for proper plugin data cleanup on deletion
+
+### Fixed - Restore Stuck
+- Pre-process SQL file to remove multi-line mysqldump warnings
+- Properly filter out warning blocks that span multiple lines
+- Exclude `.git`, `.svn`, `.hg`, `node_modules`, IDE folders, and OS junk from backups
+- Extract files individually during restore instead of bulk `extractTo()`
+- Skip `.git` and development files during restore
+- Skip backup directory during restore to prevent recursion
+- Continue restore even if some files fail (log summary of results)
+
+---
+
+## [1.0.28] - 2025-12-31
+### Fixed - Fatal Error from Duplicate Method Declarations
+- **Fatal error:** `Cannot redeclare Simple_Migrator\Backup_Manager::delete_backup()`
+- Removed duplicate `delete_backup()`, `restore_database()`, `restore_files()`, `recursive_delete()` methods
+- Made `restore_database()` and `restore_files()` public for WP-CLI access
+- Kept new WP-CLI helper methods: `get_backup_dir()`, `get_all_backups()`, `get_backup_metadata()`
+
+---
+
 ## [1.0.27] - 2025-01-31
 ### Added - WP-CLI Integration
 - **Emergency Recovery:** Restore backups when site is broken/inaccessible
